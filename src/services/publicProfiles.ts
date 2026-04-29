@@ -41,7 +41,8 @@ export const ensurePublicRoleProfile = async (profile: UserProfile) => {
     locationArea: safeTrim(profile.locationArea),
     location: [safeTrim(profile.locationArea), safeTrim(profile.locationCity)].filter(Boolean).join(', '),
     portfolioLink,
-    verifiedPro: true,
+    verifiedPro: role === 'artist',
+    authorizedSeller: role === 'dealer',
     updatedAt: serverTimestamp(),
   };
 

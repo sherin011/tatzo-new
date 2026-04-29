@@ -3,17 +3,8 @@
     "name": "Tatzo New",
     "slug": "tatzo-new",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "light",
     "platforms": ["ios", "android", "web"],
     "assetBundlePatterns": ["**/*"],
-    "scheme": "tatzo-new",
-    "android": {
-      "package": "com.sunitha.tatzo",
-      "googleServicesFile": "./android/app/google-services.json"
-    },
-    "experiments": {
-      "newArchEnabled": false
-    }
+    "newArchEnabled": false
   }
 }

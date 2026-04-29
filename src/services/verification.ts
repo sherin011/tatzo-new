@@ -66,7 +66,7 @@ export const submitVerificationApplication = async (params: SubmitVerificationAp
     {
       uid,
       requestedRole,
-      status: 'approved',
+      status: 'pending',
 
       locationCity: city,
       locationArea: area,
@@ -80,8 +80,9 @@ export const submitVerificationApplication = async (params: SubmitVerificationAp
       bankDetails: String(bankDetails || '').trim(),
 
       submittedAt: serverTimestamp(),
-      reviewedAt: serverTimestamp(),
-      reviewedBy: uid,
+      reviewedAt: null,
+      reviewedBy: null,
+      rejectReason: '',
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     },
@@ -92,13 +93,11 @@ export const submitVerificationApplication = async (params: SubmitVerificationAp
     doc(db, 'users', uid),
     {
       uid,
-      role: requestedRole,
-      requestedRole: null,
-      verificationStatus: 'approved',
+      requestedRole,
+      verificationStatus: 'pending',
       verificationRejectReason: '',
-      verifiedPro: requestedRole === 'artist',
-      authorizedSeller: requestedRole === 'dealer',
-      isProfileComplete: true,
+      verifiedPro: false,
+      authorizedSeller: false,
       setupComplete: true,
       verificationUpdatedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),

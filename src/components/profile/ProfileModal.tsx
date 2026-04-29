@@ -67,7 +67,8 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
 
   const [applyOpen, setApplyOpen] = useState(false);
   const [applyRole, setApplyRole] = useState<RequestedRole>('artist');
-  const [applySubmitting, setApplySubmitting] = useState(false);  const [applyDraft, setApplyDraft] = useState<ApplyDraft>({
+  const [applySubmitting, setApplySubmitting] = useState(false);
+  const [applyDraft, setApplyDraft] = useState<ApplyDraft>({
     shopName: '',
     businessEmail: '',
     idProof: '',
@@ -213,7 +214,7 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
     }
   };
 
-const openApply = (nextRole: RequestedRole) => {
+  const openApply = (nextRole: RequestedRole) => {
     if (verificationStatus === 'pending') return;
 
     if (locationMissing) {
@@ -271,17 +272,15 @@ const openApply = (nextRole: RequestedRole) => {
       });
 
       patchLocalProfile({
-        role: applyRole,
-        requestedRole: null,
-        verificationStatus: 'approved',
+        requestedRole: applyRole,
+        verificationStatus: 'pending',
         verificationRejectReason: '',
-        verifiedPro: applyRole === 'artist',
-        authorizedSeller: applyRole === 'dealer',
-        isProfileComplete: true,
+        verifiedPro: false,
+        authorizedSeller: false,
       });
 
       setApplyOpen(false);
-      Alert.alert('Tatzo', `${applyRole === 'artist' ? 'Artist' : 'Dealer'} suite activated successfully.`);
+      Alert.alert('Tatzo', 'Verification submitted. Admin review is in progress.');
     } catch (e: any) {
       Alert.alert('Tatzo', e?.code ? `${e.code}: ${e?.message ?? ''}` : (e?.message ?? 'Could not submit application.'));
     } finally {
@@ -477,7 +476,7 @@ const openApply = (nextRole: RequestedRole) => {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.note}>Submit your professional details to activate your suite instantly.</Text>
+            <Text style={styles.note}>Submit your professional details. Admin will review and approve.</Text>
 
             <View style={styles.row}>
               <Text style={styles.label}>Shop / Studio Name</Text>
@@ -550,7 +549,7 @@ const openApply = (nextRole: RequestedRole) => {
               style={[styles.saveBtn, applySubmitting && styles.saveBtnDisabled]}
               accessibilityRole="button"
             >
-              <Text style={styles.saveText}>{applySubmitting ? 'Submitting...' : 'Activate Suite'}</Text>
+              <Text style={styles.saveText}>{applySubmitting ? 'Submitting...' : 'Submit for Review'}</Text>
             </Pressable>
           </ScrollView>
         </KeyboardAvoidingView>

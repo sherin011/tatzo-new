@@ -146,7 +146,7 @@ const Login = () => {
         const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
         await updateProfile(userCredential.user, { displayName: fullName.trim() });
 
-                try {
+        try {
           await syncUserProfile(userCredential.user, {
             displayName: fullName.trim(),
             role: 'user',
@@ -310,6 +310,12 @@ const Login = () => {
               </View>
             ) : null}
 
+            {!isSignUp ? (
+              <TouchableOpacity activeOpacity={0.85} onPress={openForgotPassword} style={styles.forgotLink}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity activeOpacity={0.9} disabled={isLoading} onPress={handleAuth} style={styles.ctaWrap}>
               <LinearGradient colors={accentGradient} style={styles.ctaButton}>
                 {isLoading ? (
@@ -360,7 +366,8 @@ const Login = () => {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>    </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 };
 
@@ -511,7 +518,8 @@ const createStyles = (theme: AppTheme) =>
       backgroundColor: theme.mode === 'light' ? 'rgba(11, 11, 15, 0.04)' : 'rgba(255, 255, 255, 0.04)',
       borderWidth: 1,
       borderColor: theme.colors.border,
-    },    input: {
+    },
+    input: {
       backgroundColor: theme.mode === 'light' ? 'rgba(11, 11, 15, 0.04)' : 'rgba(255, 255, 255, 0.04)',
       borderRadius: 18,
       borderWidth: 1,

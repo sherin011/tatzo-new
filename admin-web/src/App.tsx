@@ -22,8 +22,21 @@ export default function App() {
 
   if (loading) return <div className="center-wrap"><div className="hint">Checking session...</div></div>;
 
-  if (!signedIn || !isAdmin) {
+  if (!signedIn) {
     return <AdminLogin onSuccess={() => {}} />;
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="center-wrap">
+        <div className="panel">
+          <h1>TATZO Admin</h1>
+          <p>This account is signed in but does not have admin claim.</p>
+          <div className="hint">Set custom claim <strong>admin=true</strong>, then sign in again.</div>
+          <button onClick={() => void logoutAdmin()}>Sign out</button>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -27,6 +27,20 @@ a { color: inherit; text-decoration: none; }
   gap: 10px;
 }
 
+.segmented {
+  display: flex;
+  gap: 8px;
+}
+
+.seg-btn {
+  flex: 1;
+}
+
+.seg-btn-active {
+  background: rgba(122, 92, 255, 0.28);
+  border-color: rgba(122, 92, 255, 0.48);
+}
+
 .page { display: grid; gap: 14px; }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

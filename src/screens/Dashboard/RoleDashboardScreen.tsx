@@ -98,7 +98,7 @@ const RoleDashboardScreen = ({ role }: RoleDashboardScreenProps) => {
     setIsSigningOut(true);
 
     try {
-      await signOutAndCleanup({ deleteProfile: true });
+      await signOutAndCleanup({ deleteProfile: false });
     } catch (error) {
       console.error('TATZO: sign out failed', error);
       Alert.alert('Tatzo', 'Could not sign out right now. Please try again.');

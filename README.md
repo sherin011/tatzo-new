@@ -1,111 +1,80 @@
-# Inkova - Tattoo Marketplace App
+# TATZO Mobile + Admin
 
-## 🚀 Quick Start
+React Native (Expo, native Android kept) + Firebase + Admin review portal.
 
-```
-cd inkova-new
+## 1) Install
+
+```bash
 npm install
-npm run dev
+npm --prefix admin-web install
 ```
 
-**Live:** http://localhost:5173
+## 2) Health Checks
 
-## 🎨 Features
-
-- **Cyberpunk Neon UI** - Glassmorphism, animations, responsive
-- **Role-Based Access** - User/Artist/Dealer dashboards
-- **Mock Firebase** - Full auth/role flow (no real deps)
-- **Mobile-First** - Perfect on all screens
-- **Production Ready** - Clean, zero warnings
-
-## 📱 Flow
-
-```
-Login → Onboarding → Select Role → Protected Dashboard
-```
-
-**Demo:** Click Login → auto-login → select Artist → Artist Dashboard
-
-## 🔧 Structure
-
-```
-src/
-├── App.jsx          - Router + ProtectedRoute
-├── pages/           - Login, Register, RoleSelect, Dashboards
-├── components/      - ProtectedRoute.jsx
-├── index.css        - Cyberpunk theme + glassmorphism
-└── services/        - firebase.js (mock)
-```
-
-## 🎯 Swap to Real Firebase
-
-Replace `src/services/firebase.js` mock with real config.
-
-## 📱 Mobile Optimized
-
-- Responsive typography
-- Touch-friendly cards
-- Optimized padding/spacing
-
-## Zero Dependencies Issues
-
-- Vite + React 19
-- No external deps beyond react-router-dom
-- Mock Firebase = instant demo
-
-**Built for production deployment.**
-
-## Razorpay Backend (Firebase Functions)
-
-This repo includes a backend scaffold in `functions/` for Razorpay payments.
-
-### What it does
-- `createOrder`: creates a Razorpay order for an existing Firestore booking in `bookings/{bookingId}`.
-- `verifyPayment`: verifies Razorpay signature and marks the booking as paid.
-
-### Environment variables (set later)
-These must be configured in the Functions runtime (do not put secrets inside the mobile app):
-- `RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-
-### Local setup (later)
 ```bash
-cd functions
-npm i
-npm run build
+npx tsc --noEmit
+npx expo-doctor
+npm --prefix admin-web run build
 ```
 
-### Deploy (later)
+## 3) Run Mobile App
+
 ```bash
-cd functions
-npm run deploy
+npx expo start
 ```
 
-## TATZO Admin Portal (New)
+For Android native build:
 
-### Run Admin Web (local)
-```bash
-cd admin-web
-npm install
-npm run dev
+```powershell
+cd android
+$env:NODE_ENV="development"
+.\gradlew.bat :app:processDebugGoogleServices --no-daemon
+.\gradlew.bat :app:assembleDebug -x lint -x test --no-daemon
 ```
 
-### Build Admin Web (for Firebase Hosting)
-```bash
-cd admin-web
-npm run build
+If Windows file-lock error appears during `mergeDebugNativeLibs` / `packageDebug`:
+
+```powershell
+cd android
+.\gradlew.bat --stop
+Remove-Item -LiteralPath ".\app\build" -Recurse -Force -ErrorAction SilentlyContinue
+$env:NODE_ENV="development"
+.\gradlew.bat :app:assembleDebug -x lint -x test --no-daemon
 ```
 
-### Set Admin Custom Claim
+## 4) Verification Flow (Current)
+
+- Login/signup -> direct User Dashboard
+- Location missing -> Profile banner + Set Location CTA
+- Become Artist/Dealer with missing location -> force location first
+- Apply submit -> `verificationStatus: pending` (role **not** switched)
+- Role switches only after admin approval
+
+## 5) Admin Web Portal
+
+Run locally:
+
 ```bash
-# PowerShell
+npm --prefix admin-web run dev
+```
+
+Behavior:
+
+- Sign up creates account only
+- Sign in requires custom claim `admin=true`
+- Signed-in non-admin users are blocked with a claim instruction screen
+
+Set admin claim:
+
+```powershell
 $env:FIREBASE_SERVICE_ACCOUNT="C:\path\to\service-account.json"
 npm run set-admin-claim -- <admin-email-or-uid>
 ```
 
-After setting claim, sign out + sign in again in admin web portal.
+Then sign out and sign in again.
 
-### Deploy Rules + Hosting
+## 6) Firebase Deploy
+
 ```bash
 npx firebase deploy --only firestore:rules,storage,hosting
 ```

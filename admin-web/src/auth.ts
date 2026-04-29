@@ -1,15 +1,32 @@
-﻿import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  type User,
+} from 'firebase/auth';
 import { auth } from './firebase';
+
+const getAdminToken = async (user: User, forceRefresh = false) => {
+  const token = await user.getIdTokenResult(forceRefresh);
+  return { token, isAdmin: Boolean(token.claims.admin) };
+};
 
 export const loginAdmin = async (email: string, password: string) => {
   const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-  const token = await cred.user.getIdTokenResult(true);
+  const { isAdmin } = await getAdminToken(cred.user, true);
 
-  if (!token.claims.admin) {
+  if (!isAdmin) {
     await signOut(auth);
     throw new Error('This account is not an admin. Set custom claim admin=true first.');
   }
 
+  return cred.user;
+};
+
+export const signupAdminCandidate = async (email: string, password: string) => {
+  const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  await signOut(auth);
   return cred.user;
 };
 
@@ -22,6 +39,10 @@ export const subscribeAuth = (onChange: (user: User | null, isAdmin: boolean) =>
       return;
     }
 
-    const token = await u.getIdTokenResult();
-    onChange(u, Boolean(token.claims.admin));
+    try {
+      const { isAdmin } = await getAdminToken(u);
+      onChange(u, isAdmin);
+    } catch {
+      onChange(u, false);
+    }
   });
