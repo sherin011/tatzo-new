@@ -31,3 +31,19 @@ export type UserDoc = {
   locationCity?: string;
   locationArea?: string;
 };
+
+export type AdminDashboardMetrics = {
+  totalUsers: number;
+  totalArtists: number;
+  totalDealers: number;
+  totalPosts: number;
+  totalBookings: number;
+  bookingsPendingPayment: number;
+  bookingsPendingArtistApproval: number;
+  bookingsConfirmed: number;
+  bookingsCompleted: number;
+  bookingsCancelled: number;
+  pendingVerifications: number;
+  approvedVerifications: number;
+  rejectedVerifications: number;
+};

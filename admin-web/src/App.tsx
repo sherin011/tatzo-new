@@ -1,6 +1,7 @@
-﻿import { useEffect, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { logoutAdmin, subscribeAuth } from './auth';
+import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin';
 import PendingApplications from './pages/PendingApplications';
 import VerificationDetail from './pages/VerificationDetail';
@@ -20,7 +21,13 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  if (loading) return <div className="center-wrap"><div className="hint">Checking session...</div></div>;
+  if (loading) {
+    return (
+      <div className="center-wrap">
+        <div className="hint">Checking session...</div>
+      </div>
+    );
+  }
 
   if (!signedIn) {
     return <AdminLogin onSuccess={() => {}} />;
@@ -45,9 +52,20 @@ export default function App() {
         <h1>TATZO Admin Portal</h1>
         <button onClick={() => void logoutAdmin()}>Sign out</button>
       </header>
+
+      <nav className="admin-nav">
+        <NavLink to="/" end className={({ isActive }) => `nav-chip ${isActive ? 'nav-chip-active' : ''}`}>
+          Dashboard
+        </NavLink>
+        <NavLink to="/verifications" className={({ isActive }) => `nav-chip ${isActive ? 'nav-chip-active' : ''}`}>
+          Verification Queue
+        </NavLink>
+      </nav>
+
       <Routes>
-        <Route path="/" element={<PendingApplications />} />
-        <Route path="/app/:uid" element={<VerificationDetail />} />
+        <Route path="/" element={<AdminDashboard />} />
+        <Route path="/verifications" element={<PendingApplications />} />
+        <Route path="/verifications/:uid" element={<VerificationDetail />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

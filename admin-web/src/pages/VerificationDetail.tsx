@@ -65,7 +65,7 @@ export default function VerificationDetail() {
         user: userDoc,
         verification,
       });
-      navigate('/');
+      navigate('/verifications');
     } catch (e: any) {
       setError(e?.message ?? 'Approve failed.');
     } finally {
@@ -85,7 +85,7 @@ export default function VerificationDetail() {
         adminUid,
         reason: rejectReason,
       });
-      navigate('/');
+      navigate('/verifications');
     } catch (e: any) {
       setError(e?.message ?? 'Reject failed.');
     } finally {
@@ -112,7 +112,7 @@ export default function VerificationDetail() {
     <div className="page">
       <div className="toolbar">
         <h2>Verification Detail</h2>
-        <Link to="/" className="link-btn">
+        <Link to="/verifications" className="link-btn">
           Back
         </Link>
       </div>

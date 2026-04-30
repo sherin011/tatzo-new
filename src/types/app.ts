@@ -13,6 +13,20 @@ export type RootStackParamList = {
 };
 
 export type VerificationStatus = 'unsubmitted' | 'pending' | 'approved' | 'rejected';
+export type TimeSlotId = 'morning' | 'afternoon' | 'evening';
+
+export type NotificationType =
+  | 'like'
+  | 'share'
+  | 'follow'
+  | 'booking_request'
+  | 'booking_confirmed'
+  | 'booking_declined'
+  | 'reschedule_proposed'
+  | 'session_completed'
+  | 'verification_approved'
+  | 'verification_rejected'
+  | 'inquiry';
 
 export type UserProfile = {
   uid?: string;
@@ -49,6 +63,15 @@ export type UserProfile = {
 
   // Payout setup (placeholder until real Razorpay onboarding)
   payoutStatus?: 'unconfigured' | 'pending' | 'ready';
+
+  // Artist onboarding checklist
+  artistOnboarding?: {
+    profileDone?: boolean;
+    payoutDone?: boolean;
+    firstPostDone?: boolean;
+    dismissedAt?: unknown;
+    updatedAt?: unknown;
+  };
 };
 
 export type AppSessionState =

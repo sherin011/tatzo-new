@@ -1,6 +1,6 @@
 import {
   createUserWithEmailAndPassword,
-  onAuthStateChanged,
+  onIdTokenChanged,
   signInWithEmailAndPassword,
   signOut,
   type User,
@@ -32,14 +32,14 @@ export const signupAdminCandidate = async (email: string, password: string) => {
 export const logoutAdmin = () => signOut(auth);
 
 export const subscribeAuth = (onChange: (user: User | null, isAdmin: boolean) => void) =>
-  onAuthStateChanged(auth, async (u) => {
+  onIdTokenChanged(auth, async (u) => {
     if (!u) {
       onChange(null, false);
       return;
     }
 
     try {
-      const { isAdmin } = await getAdminToken(u);
+      const { isAdmin } = await getAdminToken(u, true);
       onChange(u, isAdmin);
     } catch {
       onChange(u, false);
