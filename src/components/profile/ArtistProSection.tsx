@@ -1,4 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { Pressable } from 'react-native';
+import { openRazorpayCheckoutForSubscription } from '../../services/subscription';
+
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../theme/useAppTheme';
@@ -11,6 +14,11 @@ type ArtistProSectionProps = {
   profile: UserProfile | null;
   onPatchProfile: (patch: Partial<UserProfile>) => void;
 };
+
+const openSubscription = useCallback(() => {
+  openRazorpayCheckoutForSubscription().catch(console.error);
+}, []);
+
 
 const statusCopy = (status: UserProfile['verificationStatus']): { label: string; tone: 'muted' | 'good' | 'warn' } => {
   if (status === 'approved') return { label: 'VERIFIED', tone: 'good' };
@@ -61,8 +69,12 @@ const ArtistProSection = ({ uid, role, profile }: ArtistProSectionProps) => {
         </View>
 
         <Text style={styles.cardSub} numberOfLines={3}>
-          Tatzo Pro (Rs.1499/month). Billing will reflect after Razorpay live subscription setup is completed.
+          Limited Discount Offer: Rs.499 + 18% GST (Rs.89.82) = Rs.588.82 total. Tap to subscribe.
         </Text>
+        <Pressable onPress={openSubscription} style={styles.subscribeBtn}>
+          <Text style={styles.subscribeBtnText}>Subscribe Now (Rs.588.82)</Text>
+        </Pressable>
+
       </View>
 
       <View style={styles.card}>
@@ -87,6 +99,19 @@ const createStyles = (theme: AppTheme) =>
     section: {
       gap: 10,
     },
+    subscribeBtn: {
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      backgroundColor: theme.colors.accent,
+      borderRadius: 20,
+    },
+    subscribeBtnText: {
+      color: theme.colors.textInverse,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+
     sectionTitle: {
       color: theme.colors.textMuted,
       fontSize: 11,

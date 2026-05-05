@@ -4,10 +4,13 @@ import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebaseConfig';
 import { ensurePublicRoleProfile } from '../services/publicProfiles';
 import { AppSessionState, UserProfile } from '../types/app';
-import { isProfileComplete, isUserRole, resolveDashboardRoute } from './routeResolver';
+import { isProfileComplete, isUserRole, isVerificationStatus, resolveDashboardRoute, resolveEffectiveRole } from './routeResolver';
 
 const provisionDefaults = (user: { uid: string; email: string | null; displayName: string | null }, profile: UserProfile) => {
-  const role = isUserRole(profile.role) ? profile.role : 'user';
+  const role = resolveEffectiveRole(profile);
+  const rawRole = isUserRole(profile.role) ? profile.role : 'user';
+  const requestedRole =
+    profile.requestedRole ?? (rawRole !== 'user' && profile.verificationStatus !== 'approved' ? rawRole : null);
 
   return {
     uid: user.uid,
@@ -19,10 +22,14 @@ const provisionDefaults = (user: { uid: string; email: string | null; displayNam
     locationCity: profile.locationCity ?? '',
     locationArea: profile.locationArea ?? '',
 
-    requestedRole: profile.requestedRole ?? null,
+    requestedRole,
     verificationStatus: profile.verificationStatus ?? 'unsubmitted',
     verificationRejectReason: profile.verificationRejectReason ?? '',
     isProfileComplete: Boolean(profile.isProfileComplete ?? false),
+    subscriptionStatus: profile.subscriptionStatus ?? 'inactive',
+    subscriptionPaymentStatus: profile.subscriptionPaymentStatus ?? 'idle',
+    subscriptionVerificationStatus: profile.subscriptionVerificationStatus ?? 'failed',
+    subscriptionLastError: profile.subscriptionLastError ?? '',
 
     updatedAt: serverTimestamp(),
   };
@@ -61,7 +68,14 @@ export const useSessionRouting = (): AppSessionState => {
           const profile = snapshot.data() as UserProfile;
 
           // Auto-provision required defaults for older docs.
-          const needsProvision = !profile.setupComplete || !isUserRole(profile.role);
+          const needsProvision =
+            !profile.setupComplete ||
+            !isUserRole(profile.role) ||
+            !isVerificationStatus(profile.verificationStatus) ||
+            !profile.subscriptionStatus ||
+            !profile.subscriptionPaymentStatus ||
+            !profile.subscriptionVerificationStatus ||
+            resolveEffectiveRole(profile) !== (isUserRole(profile.role) ? profile.role : 'user');
           if (needsProvision && !provisioningRef.current[user.uid]) {
             provisioningRef.current[user.uid] = true;
             const payload = provisionDefaults(
@@ -99,7 +113,7 @@ export const useSessionRouting = (): AppSessionState => {
             status: 'ready',
             user,
             profile: profile as UserProfile & { role: any; setupComplete: true },
-            route: resolveDashboardRoute(profile.role as any),
+            route: resolveDashboardRoute(resolveEffectiveRole(profile)),
           });
         },
         (error) => {

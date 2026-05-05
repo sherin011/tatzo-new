@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../../config/firebaseConfig';
-import { resolveDashboardRoute, isUserRole } from '../../navigation/routeResolver';
+import { resolveDashboardRoute, isUserRole, resolveEffectiveRole } from '../../navigation/routeResolver';
 import { RootStackParamList, UserRole } from '../../types/app';
 import { syncUserProfile } from '../../services/userProfile';
 import { createResponsiveShadow } from '../../utils/responsiveShadow';
@@ -153,6 +153,10 @@ const Login = () => {
             setupComplete: true,
             requestedRole: null,
             verificationStatus: 'unsubmitted',
+            subscriptionStatus: 'inactive',
+            subscriptionPaymentStatus: 'idle',
+            subscriptionVerificationStatus: 'failed',
+            subscriptionLastError: '',
             isProfileComplete: false,
             locationCity: '',
             locationArea: '',
@@ -189,9 +193,13 @@ const Login = () => {
         return;
       }
 
-      const profile = profileSnapshot.data() as { setupComplete?: boolean; role?: UserRole } | undefined;
+      const profile = profileSnapshot.data() as { setupComplete?: boolean; role?: UserRole; verificationStatus?: any } | undefined;
       if (profile?.setupComplete && isUserRole(profile.role)) {
-        goToDashboard(profile.role);
+        const effectiveRole = resolveEffectiveRole({
+          role: profile.role,
+          verificationStatus: profile.verificationStatus,
+        });
+        goToDashboard(effectiveRole);
         return;
       }
     } catch (error: any) {

@@ -1,9 +1,9 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '../../config/firebaseConfig';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { signOutAndCleanup } from '../../services/signout';
 import { createResponsiveShadow } from '../../utils/responsiveShadow';
 import BottomNavigation, { FeedNavKey } from '../../components/navigation/BottomNavigation';
@@ -15,11 +15,18 @@ import BookingFlowModal from '../../components/booking/BookingFlowModal';
 import { useAppTheme } from '../../theme/useAppTheme';
 import { brand } from '../../theme/brand';
 import type { AppTheme } from '../../theme/theme';
-import type { UserProfile } from '../../types/app';
+import type { NotificationDoc, UserProfile } from '../../types/app';
 import { dummyArtists } from '../../data/dummyArtists';
 import SocioFeedPanel from './panels/SocioFeedPanel';
 import FindArtistPanel from './panels/FindArtistPanel';
 import StatusBanner from '../../components/verification/StatusBanner';
+import {
+  migrateLegacyPendingPaymentBookingsForUser,
+  createTodayBookingReminders,
+  openRazorpayCheckoutForBooking,
+  subscribeUserPayableBookings,
+  type UserPayableBooking,
+} from '../../services/bookings';
 
 const FIND_ARTIST_CARDS = dummyArtists.slice(0, 8);
 
@@ -47,6 +54,9 @@ const UserDashboardScreen = () => {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookingArtist, setBookingArtist] = useState<(typeof dummyArtists)[number] | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [payableBookings, setPayableBookings] = useState<UserPayableBooking[]>([]);
+  const [payingBookingId, setPayingBookingId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   
   useEffect(() => {
@@ -60,6 +70,49 @@ const UserDashboardScreen = () => {
       },
       () => {
         setUserProfile(null);
+      },
+    );
+
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const uidNow = auth.currentUser?.uid;
+    if (!uidNow) return;
+
+    let mounted = true;
+
+    void migrateLegacyPendingPaymentBookingsForUser(uidNow).catch(() => {
+      // keep app responsive even if migration fails
+    });
+
+    const unsub = subscribeUserPayableBookings(
+      uidNow,
+      (rows) => {
+        if (mounted) setPayableBookings(rows);
+      },
+      () => {
+        if (mounted) setPayableBookings([]);
+      },
+    );
+
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, []);
+  useEffect(() => {
+    const uidNow = auth.currentUser?.uid;
+    if (!uidNow) return;
+
+    const unreadQuery = query(collection(db, 'users', uidNow, 'notifications'), where('read', '==', false));
+    const unsub = onSnapshot(
+      unreadQuery,
+      (snap) => {
+        setUnreadCount(snap.size);
+      },
+      () => {
+        setUnreadCount(0);
       },
     );
 
@@ -99,6 +152,82 @@ const UserDashboardScreen = () => {
   };
 
   const handleProfilePress = () => setProfileOpen(true);
+
+  const handleNotificationPress = (item: NotificationDoc) => {
+    const type = String(item.type ?? '');
+    if (
+      type === 'booking_artist_approved_payment_pending' ||
+      type === 'booking_confirmed' ||
+      type === 'booking_reminder' ||
+      type === 'payment_success' ||
+      type === 'booking_rejected' ||
+      type === 'booking_cancelled'
+    ) {
+      setActiveTab('home');
+      setNotificationsOpen(false);
+      return;
+    }
+
+    if (type === 'like' || type === 'follow' || type === 'post_created') {
+      setActiveTab('home');
+      setNotificationsOpen(false);
+      return;
+    }
+
+    if (type === 'dealer_request_submitted' || type === 'dealer_request_approved' || type === 'dealer_request_rejected') {
+      setNotificationsOpen(false);
+      setProfileOpen(true);
+      return;
+    }
+
+    setNotificationsOpen(false);
+    Alert.alert('Tatzo', 'This notification route opens soon.');
+  };
+
+
+  const renderPaymentCard = () => {
+    if (!payableBookings.length) return null;
+
+    return (
+      <View style={styles.paymentCard}>
+        <View style={styles.paymentHead}>
+          <Text style={styles.paymentTitle}>Payment Pending</Text>
+          <Text style={styles.paymentBadge}>{payableBookings.length}</Text>
+        </View>
+        <Text style={styles.paymentSub}>Your artist approved booking. Complete deposit to confirm slot.</Text>
+
+        <View style={styles.paymentList}>
+          {payableBookings.slice(0, 3).map((row) => (
+            <View key={row.id} style={styles.paymentRow}>
+              <View style={styles.paymentCopy}>
+                <Text style={styles.paymentArtist}>{row.artistName}</Text>
+                <Text style={styles.paymentMeta}>
+                  {row.dateISO} | {String(row.slotId).toUpperCase()} | Rs. {row.depositAmount}
+                </Text>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={[styles.paymentBtn, payingBookingId === row.id && styles.paymentBtnDisabled]}
+                disabled={payingBookingId === row.id}
+                onPress={async () => {
+                  try {
+                    setPayingBookingId(row.id);
+                    await openRazorpayCheckoutForBooking(row.id);
+                  } catch (error: any) {
+                    Alert.alert('Tatzo', error?.message ?? 'Could not open payment page.');
+                  } finally {
+                    setPayingBookingId(null);
+                  }
+                }}
+              >
+                <Text style={styles.paymentBtnText}>{payingBookingId === row.id ? 'Opening...' : 'Pay Now'}</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -202,15 +331,17 @@ const UserDashboardScreen = () => {
             header={
               <>
                 <TopBar
-                  title="Socio Hub"
+                  title="Socio Feed"
                   onToggleTheme={toggleMode}
                   onPressAlerts={() => setNotificationsOpen(true)}
                   onPressProfile={handleProfilePress}
+                  notificationCount={unreadCount}
                 />
                 <LinearGradient colors={theme.gradients.dark} style={styles.heroCard}>
-                  <Text style={styles.heroTitle}>Socio Hub</Text>
+                  <Text style={styles.heroTitle}>Socio Feed</Text>
                   <Text style={styles.heroBody}>A clean feed for discovery. Images will connect next.</Text>
                 </LinearGradient>
+                {renderPaymentCard()}
                 <StatusBanner
                   status={userProfile?.verificationStatus}
                   requestedRole={userProfile?.requestedRole}
@@ -224,6 +355,7 @@ const UserDashboardScreen = () => {
             visible={notificationsOpen}
             uid={auth.currentUser?.uid ?? null}
             onClose={() => setNotificationsOpen(false)}
+            onPressItem={handleNotificationPress}
           />
           <ProfileModal
             visible={profileOpen}
@@ -254,16 +386,18 @@ const UserDashboardScreen = () => {
             header={
               <>
                 <TopBar
-                  title="Socio Hub"
+                  title="Explore"
                   onToggleTheme={toggleMode}
                   onPressAlerts={() => setNotificationsOpen(true)}
                   onPressProfile={handleProfilePress}
+                  notificationCount={unreadCount}
                 />
 
                 <LinearGradient colors={theme.gradients.dark} style={styles.heroCard}>
                   <Text style={styles.heroTitle}>{feedTitle}</Text>
                   <Text style={styles.heroBody}>Search and preview artists before you book.</Text>
                 </LinearGradient>
+                {renderPaymentCard()}
                 <StatusBanner
                   status={userProfile?.verificationStatus}
                   requestedRole={userProfile?.requestedRole}
@@ -282,6 +416,7 @@ const UserDashboardScreen = () => {
             visible={notificationsOpen}
             uid={auth.currentUser?.uid ?? null}
             onClose={() => setNotificationsOpen(false)}
+            onPressItem={handleNotificationPress}
           />
           <ProfileModal
             visible={profileOpen}
@@ -312,15 +447,17 @@ const UserDashboardScreen = () => {
             header={
               <>
                 <TopBar
-                  title="Socio Hub"
+                  title="Find Artist"
                   onToggleTheme={toggleMode}
                   onPressAlerts={() => setNotificationsOpen(true)}
                   onPressProfile={handleProfilePress}
+                  notificationCount={unreadCount}
                 />
                 <LinearGradient colors={theme.gradients.dark} style={styles.heroCard}>
                   <Text style={styles.heroTitle}>Find Artist</Text>
                   <Text style={styles.heroBody}>Search by location and style. Chennai is selected by default.</Text>
                 </LinearGradient>
+                {renderPaymentCard()}
                 <StatusBanner
                   status={userProfile?.verificationStatus}
                   requestedRole={userProfile?.requestedRole}
@@ -338,6 +475,7 @@ const UserDashboardScreen = () => {
             visible={notificationsOpen}
             uid={auth.currentUser?.uid ?? null}
             onClose={() => setNotificationsOpen(false)}
+            onPressItem={handleNotificationPress}
           />
           <ProfileModal
             visible={profileOpen}
@@ -365,16 +503,19 @@ const UserDashboardScreen = () => {
       <LinearGradient colors={theme.gradients.canvas} style={styles.container}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           <TopBar
-            title="Socio Hub"
+            title={activeTab === 'learning' ? 'Academy' : 'Shop'}
             onToggleTheme={toggleMode}
             onPressAlerts={() => handleTopAction('Notifications')}
             onPressProfile={handleProfilePress}
+                  notificationCount={unreadCount}
           />
 
           <LinearGradient colors={theme.gradients.dark} style={styles.heroCard}>
-            <Text style={styles.heroTitle}>Socio Hub</Text>
+            <Text style={styles.heroTitle}>{activeTab === 'learning' ? 'Academy' : 'Shop'}</Text>
             <Text style={styles.heroBody}>
-              Explore and find artists. We will add posts once uploads are connected.
+              {activeTab === 'learning'
+                ? 'Learn before you book and follow guided modules.'
+                : 'Browse supplies and partner catalog in one place.'}
             </Text>
           </LinearGradient>
 
@@ -499,6 +640,91 @@ const createStyles = (theme: AppTheme) =>
       borderWidth: 1,
       borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.22)' : 'rgba(122, 92, 255, 0.3)',
     },
+    paymentCard: {
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.3)' : 'rgba(122, 92, 255, 0.34)',
+      backgroundColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.1)' : 'rgba(122, 92, 255, 0.14)',
+      padding: 12,
+      gap: 8,
+    },
+    paymentHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    paymentTitle: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+      fontSize: 14,
+      fontWeight: '900',
+      letterSpacing: 0.4,
+    },
+    paymentBadge: {
+      color: theme.colors.accent,
+      backgroundColor: theme.colors.accentSoft,
+      borderRadius: 999,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      fontSize: 11,
+      fontWeight: '800',
+      borderWidth: 1,
+      borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.32)' : 'rgba(122, 92, 255, 0.35)',
+    },
+    paymentSub: {
+      color: theme.colors.textMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      lineHeight: 17,
+    },
+    paymentList: {
+      gap: 8,
+      marginTop: 2,
+    },
+    paymentRow: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      paddingHorizontal: 10,
+      paddingVertical: 9,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    paymentCopy: {
+      flex: 1,
+      gap: 2,
+    },
+    paymentArtist: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+      fontSize: 12,
+      fontWeight: '900',
+    },
+    paymentMeta: {
+      color: theme.colors.textMuted,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    paymentBtn: {
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.mode === 'light' ? 'rgba(0, 229, 255, 0.45)' : 'rgba(0, 229, 255, 0.42)',
+      backgroundColor: theme.mode === 'light' ? 'rgba(0, 229, 255, 0.16)' : 'rgba(0, 229, 255, 0.2)',
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      minWidth: 74,
+      alignItems: 'center',
+    },
+    paymentBtnDisabled: {
+      opacity: 0.65,
+    },
+    paymentBtnText: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+      fontSize: 11,
+      fontWeight: '900',
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
     sectionList: {
       gap: 12,
     },
@@ -581,11 +807,3 @@ const createStyles = (theme: AppTheme) =>
   });
 
 export default UserDashboardScreen;
-
-
-
-
-
-
-
-

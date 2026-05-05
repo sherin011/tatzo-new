@@ -1,4 +1,4 @@
-﻿import { Share } from 'react-native';
+import { Share } from 'react-native';
 import { auth, db } from '../config/firebaseConfig';
 import {
   collection,
@@ -12,8 +12,9 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
+import { writeNotificationDual } from './notifications';
 
-export type SocialNotificationType = 'like' | 'share' | 'follow';
+export type SocialNotificationType = 'like' | 'follow';
 
 type ArtistIdentity = {
   uid?: string;
@@ -22,54 +23,51 @@ type ArtistIdentity = {
 };
 
 export const buildShareLink = (postId: string) => {
-  // Placeholder deep link; we can swap to dynamic links later.
-  return `https://tatzo.app/p/${encodeURIComponent(postId)}`;
+  const safe = encodeURIComponent(postId);
+  return `tatzo://post/${safe}`;
 };
 
-const resolveArtistUid = async (identity: ArtistIdentity): Promise<string | null> => {
+export const buildArtistShareLink = (artistUid: string) => {
+  const safe = encodeURIComponent(artistUid);
+  return `tatzo://artist/${safe}`;
+};
+
+const buildWebFallbackLink = (kind: 'post' | 'artist', id: string) => {
+  const safe = encodeURIComponent(id);
+  return `https://tatzo.app/${kind}/${safe}`;
+};
+
+const resolveTargetUid = async (identity: ArtistIdentity): Promise<string | null> => {
   if (identity.uid) return identity.uid;
 
-  // With max privacy, we never query other users' private profiles.
-  // Resolve from the public artists collection instead.
-  const q = query(collection(db, 'artists'), where('displayName', '==', identity.displayName), limit(1));
-  const snap = await getDocs(q);
-  return snap.docs.length ? snap.docs[0].id : null;
+  // With max privacy, resolve only from public artists collection.
+  const byDisplay = query(collection(db, 'artists'), where('displayName', '==', identity.displayName), limit(1));
+  const byArtistName = query(collection(db, 'artists'), where('artistName', '==', identity.displayName), limit(1));
+  const [displaySnap, artistNameSnap] = await Promise.all([getDocs(byDisplay), getDocs(byArtistName)]);
+  if (displaySnap.docs.length) return displaySnap.docs[0].id;
+  if (artistNameSnap.docs.length) return artistNameSnap.docs[0].id;
+
+  const safeHandle = String(identity.handle ?? '')
+    .trim()
+    .replace(/^@/, '');
+  if (safeHandle) {
+    const all = await getDocs(query(collection(db, 'artists'), limit(60)));
+    const match = all.docs.find((row) => {
+      const data = row.data() as any;
+      const display = String(data.displayName ?? '').trim().toLowerCase();
+      const artistName = String(data.artistName ?? '').trim().toLowerCase();
+      const candidateHandle = (artistName || display).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      return candidateHandle === safeHandle.toLowerCase();
+    });
+    if (match) return match.id;
+  }
+
+  return null;
 };
 
 const notificationDocId = (type: SocialNotificationType, params: { toUid: string; fromUid: string; postId?: string }) => {
   if (type === 'follow') return `follow_${params.toUid}_${params.fromUid}`;
   return `${type}_${params.postId ?? 'na'}_${params.fromUid}`;
-};
-
-const writeNotification = async (params: {
-  toUid: string;
-  type: SocialNotificationType;
-  fromUid: string;
-  fromName: string;
-  postId?: string;
-  postPreview?: string;
-}) => {
-  const ref = doc(db, 'users', params.toUid, 'notifications', notificationDocId(params.type, params));
-  await setDoc(
-    ref,
-    {
-      id: ref.id,
-      type: params.type,
-      toUid: params.toUid,
-      fromUid: params.fromUid,
-      fromName: params.fromName,
-      postId: params.postId ?? null,
-      postPreview: params.postPreview ?? null,
-      createdAt: serverTimestamp(),
-      read: false,
-    },
-    { merge: true },
-  );
-};
-
-const deleteNotification = async (params: { toUid: string; type: SocialNotificationType; fromUid: string; postId?: string }) => {
-  const ref = doc(db, 'users', params.toUid, 'notifications', notificationDocId(params.type, params));
-  await deleteDoc(ref);
 };
 
 export const toggleLike = async (params: { postId: string; artist: ArtistIdentity; postPreview: string }) => {
@@ -78,73 +76,73 @@ export const toggleLike = async (params: { postId: string; artist: ArtistIdentit
 
   const actorUid = actor.uid;
   const actorName = actor.displayName ?? actor.email ?? 'User';
+  const targetUidPromise = resolveTargetUid(params.artist);
 
   const likeRef = doc(db, 'posts', params.postId, 'likes', actorUid);
   const likeSnap = await getDoc(likeRef);
-  const artistUid = await resolveArtistUid(params.artist);
 
   if (likeSnap.exists()) {
     await deleteDoc(likeRef);
-    if (artistUid) {
-      await deleteNotification({ toUid: artistUid, type: 'like', fromUid: actorUid, postId: params.postId });
-    }
-    return { liked: false, artistUid };
+    return { liked: false, targetUid: params.artist.uid ?? null, likeDelta: -1 };
   }
 
   await setDoc(likeRef, { uid: actorUid, createdAt: serverTimestamp() }, { merge: true });
-  await setDoc(
-    doc(db, 'posts', params.postId),
-    { id: params.postId, artistName: params.artist.displayName, artistHandle: params.artist.handle ?? null, updatedAt: serverTimestamp() },
-    { merge: true },
-  );
+  const targetUid = await targetUidPromise.catch(() => null);
+  const notifId = targetUid ? notificationDocId('like', { toUid: targetUid, fromUid: actorUid, postId: params.postId }) : '';
 
-  if (artistUid) {
-    await writeNotification({
-      toUid: artistUid,
-      type: 'like',
-      fromUid: actorUid,
-      fromName: actorName,
-      postId: params.postId,
-      postPreview: params.postPreview,
-    });
+  if (targetUid && notifId) {
+    try {
+      await writeNotificationDual({
+        id: notifId,
+        toUid: targetUid,
+        type: 'like',
+        fromUid: actorUid,
+        fromName: actorName,
+        title: 'New Like',
+        message: `${actorName} liked your post.`,
+        entityType: 'post',
+        entityId: params.postId,
+        postId: params.postId,
+        postPreview: params.postPreview,
+        createOnly: true,
+      });
+    } catch {
+      // Keep like interaction successful even if notification write fails.
+    }
   }
 
-  return { liked: true, artistUid };
+  return { liked: true, targetUid, likeDelta: 1 };
 };
 
-export const sharePost = async (params: { postId: string; artist: ArtistIdentity; postPreview: string; shareMessage: string }) => {
+export const sharePost = async (params: {
+  postId: string;
+  artist: ArtistIdentity;
+  postPreview: string;
+  shareMessage: string;
+}) => {
   const actor = auth.currentUser;
   if (!actor) throw new Error('You must be signed in.');
 
   const actorUid = actor.uid;
-  const actorName = actor.displayName ?? actor.email ?? 'User';
+  const targetUidPromise = resolveTargetUid(params.artist);
 
-  // Best-effort native share. If it fails, we still record intent for analytics/notifications.
-  try {
-    await Share.share({ message: params.shareMessage });
-  } catch {
-    // ignore
-  }
+  const postLink = buildShareLink(params.postId);
+  const postFallback = buildWebFallbackLink('post', params.postId);
+  const artistLink = params.artist.uid ? buildArtistShareLink(params.artist.uid) : '';
+  const artistFallback = params.artist.uid ? buildWebFallbackLink('artist', params.artist.uid) : '';
+
+  await Share.share({
+    message: `${params.shareMessage}\n\n${postLink}\n${postFallback}${artistLink ? `\n${artistLink}\n${artistFallback}` : ''}`,
+  });
 
   const shareRef = doc(db, 'posts', params.postId, 'shares', actorUid);
   await setDoc(
     shareRef,
-    { uid: actorUid, link: buildShareLink(params.postId), createdAt: serverTimestamp() },
+    { uid: actorUid, link: postLink, createdAt: serverTimestamp() },
     { merge: true },
   );
 
-  const artistUid = await resolveArtistUid(params.artist);
-  if (artistUid) {
-    await writeNotification({
-      toUid: artistUid,
-      type: 'share',
-      fromUid: actorUid,
-      fromName: actorName,
-      postId: params.postId,
-      postPreview: params.postPreview,
-    });
-  }
-
+  const artistUid = await targetUidPromise.catch(() => null);
   return { shared: true, artistUid };
 };
 
@@ -155,25 +153,40 @@ export const toggleFollow = async (params: { artist: ArtistIdentity }) => {
   const actorUid = actor.uid;
   const actorName = actor.displayName ?? actor.email ?? 'User';
 
-  const artistUid = await resolveArtistUid(params.artist);
-  if (!artistUid) return { following: false, artistUid: null };
+  const targetUid = await resolveTargetUid(params.artist);
+  if (!targetUid) return { following: false, targetUid: null };
 
-  const followRef = doc(db, 'follows', `${actorUid}_${artistUid}`);
+  const followRef = doc(db, 'follows', `${actorUid}_${targetUid}`);
   const followSnap = await getDoc(followRef);
+  const notifId = notificationDocId('follow', { toUid: targetUid, fromUid: actorUid });
 
   if (followSnap.exists()) {
     await deleteDoc(followRef);
-    await deleteNotification({ toUid: artistUid, type: 'follow', fromUid: actorUid });
-    return { following: false, artistUid };
+    return { following: false, targetUid };
   }
 
   await setDoc(
     followRef,
-    { id: followRef.id, fromUid: actorUid, toUid: artistUid, createdAt: serverTimestamp() },
+    { id: followRef.id, fromUid: actorUid, toUid: targetUid, createdAt: serverTimestamp() },
     { merge: true },
   );
-  await writeNotification({ toUid: artistUid, type: 'follow', fromUid: actorUid, fromName: actorName });
-  return { following: true, artistUid };
+
+  try {
+    await writeNotificationDual({
+      id: notifId,
+      toUid: targetUid,
+      type: 'follow',
+      fromUid: actorUid,
+      fromName: actorName,
+      title: 'New Follower',
+      message: `${actorName} started following you.`,
+      entityType: 'profile',
+      entityId: actorUid,
+      createOnly: true,
+    });
+  } catch {
+    // Keep follow relation successful even if notification write fails.
+  }
+
+  return { following: true, targetUid };
 };
-
-

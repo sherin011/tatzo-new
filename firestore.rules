@@ -18,85 +18,129 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(uid);
     }
 
-    function userDoc(uid) {
-      return get(userPath(uid));
-    }
-
     function userExists(uid) {
       return exists(userPath(uid));
     }
 
+    function userData(uid) {
+      return get(userPath(uid)).data;
+    }
+
     function userRole(uid) {
-      return userExists(uid) ? userDoc(uid).data.role : null;
+      return userExists(uid) && ('role' in userData(uid)) ? userData(uid).role : 'user';
     }
 
-    function userStatus(uid) {
-      return userExists(uid) ? userDoc(uid).data.verificationStatus : null;
+    function userVerification(uid) {
+      return userExists(uid) && ('verificationStatus' in userData(uid))
+        ? userData(uid).verificationStatus
+        : 'unsubmitted';
     }
 
-    function isValidRole(role) {
-      return role in ['user', 'artist', 'dealer'];
+    function isApprovedArtist(uid) {
+      return userRole(uid) == 'artist' && userVerification(uid) == 'approved';
     }
 
-    function isValidVerificationStatus(status) {
-      return status in ['unsubmitted', 'pending', 'approved', 'rejected'];
+    function isArtistSubscriptionActive(uid) {
+      return userExists(uid)
+        && userData(uid).subscriptionStatus == 'active'
+        && userData(uid).subscriptionPaymentStatus == 'paid'
+        && userData(uid).subscriptionVerificationStatus == 'verified';
     }
 
-    function ownerRoleChangeAllowed() {
-      return request.resource.data.role == resource.data.role
-        || (!isValidRole(resource.data.role) && request.resource.data.role == 'user');
+    function ownerLocationLockedWhenPending(uid) {
+      return userVerification(uid) != 'pending'
+        || (
+          request.resource.data.locationCity == resource.data.locationCity
+          && request.resource.data.locationArea == resource.data.locationArea
+        );
     }
 
-    function ownerVerificationStatusChangeAllowed() {
-      return request.resource.data.verificationStatus == resource.data.verificationStatus
-        || (!isValidVerificationStatus(resource.data.verificationStatus)
-            && request.resource.data.verificationStatus == 'unsubmitted')
-        || (resource.data.verificationStatus in ['unsubmitted', 'rejected']
-            && request.resource.data.verificationStatus == 'pending');
+    function ownerCreateSubscriptionSafe() {
+      return request.resource.data.get('subscriptionStatus', 'inactive') != 'active'
+        && request.resource.data.get('subscriptionPaymentStatus', 'idle') != 'paid'
+        && request.resource.data.get('subscriptionVerificationStatus', 'failed') != 'verified';
     }
 
-    function ownerLocationUnchangedWhenPending() {
-      return request.resource.data.locationCity == resource.data.locationCity
-        && request.resource.data.locationArea == resource.data.locationArea;
+    function ownerCannotEscalateSubscription() {
+      return !(
+        resource.data.get('subscriptionStatus', 'inactive') != 'active'
+        && request.resource.data.get('subscriptionStatus', resource.data.get('subscriptionStatus', 'inactive')) == 'active'
+      )
+      && !(
+        resource.data.get('subscriptionPaymentStatus', 'idle') != 'paid'
+        && request.resource.data.get('subscriptionPaymentStatus', resource.data.get('subscriptionPaymentStatus', 'idle')) == 'paid'
+      )
+      && !(
+        resource.data.get('subscriptionVerificationStatus', 'failed') != 'verified'
+        && request.resource.data.get('subscriptionVerificationStatus', resource.data.get('subscriptionVerificationStatus', 'failed')) == 'verified'
+      );
     }
 
     match /users/{userId} {
-      // Privacy: personal user profile is owner/admin only.
       allow read: if isOwner(userId) || isAdmin();
-
-      allow create: if isOwner(userId) || isAdmin();
+      allow create: if isAdmin() || (isOwner(userId) && ownerCreateSubscriptionSafe());
 
       allow update: if isAdmin() || (
         isOwner(userId)
-        && ownerRoleChangeAllowed()
-        && ownerVerificationStatusChangeAllowed()
-        && (resource.data.verificationStatus != 'pending' || ownerLocationUnchangedWhenPending())
+        && request.resource.data.uid == userId
+        && ownerCannotEscalateSubscription()
+        && (
+          !('role' in resource.data)
+          || request.resource.data.role == resource.data.role
+        )
+        && ownerLocationLockedWhenPending(userId)
       );
 
       allow delete: if isOwner(userId) || isAdmin();
 
       match /notifications/{notificationId} {
-        allow read, update, delete: if isOwner(userId) || isAdmin();
-
-        // Social flow + admin system notifications.
+        allow read: if isOwner(userId) || isAdmin();
         allow create: if isAdmin() || (
           isSignedIn()
           && request.resource.data.toUid == userId
           && request.resource.data.fromUid == request.auth.uid
         );
+        allow update: if isOwner(userId) || isAdmin() || (
+          isSignedIn()
+          && resource.data.toUid == userId
+          && resource.data.fromUid == request.auth.uid
+          && request.resource.data.toUid == userId
+          && request.resource.data.fromUid == request.auth.uid
+        );
+        allow delete: if isOwner(userId) || isAdmin();
       }
     }
 
     match /verifications/{userId} {
       allow read: if isOwner(userId) || isAdmin();
 
-      // Owner can submit/re-submit only while not pending/approved.
+      allow create, update: if isAdmin() || (
+        isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.requestedRole in ['artist', 'dealer']
+        && request.resource.data.status == 'pending'
+        && (
+          !userExists(userId)
+          || userVerification(userId) in ['unsubmitted', 'rejected', 'pending']
+        )
+      );
+
+      allow delete: if false;
+    }
+
+    match /dealerVerifications/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+
       allow create, update: if isAdmin() || (
         isOwner(userId)
         && userExists(userId)
-        && (userStatus(userId) in ['unsubmitted', 'rejected'])
+        && userRole(userId) == 'artist'
         && request.resource.data.uid == userId
         && request.resource.data.status == 'pending'
+        && (
+          !('dealerRequestStatus' in userData(userId))
+          || userData(userId).dealerRequestStatus in ['unsubmitted', 'rejected', 'pending']
+        )
       );
 
       allow delete: if false;
@@ -104,25 +148,26 @@ service cloud.firestore {
 
     match /artists/{userId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (
-        isOwner(userId)
-        && userRole(userId) == 'artist'
-        && userStatus(userId) == 'approved'
-      );
+      allow write: if isAdmin() || (isOwner(userId) && isApprovedArtist(userId));
+      allow delete: if isAdmin();
     }
 
     match /dealers/{userId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (
-        isOwner(userId)
-        && userRole(userId) == 'dealer'
-        && userStatus(userId) == 'approved'
-      );
+      allow write: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /posts/{postId} {
       allow read: if isSignedIn();
-      allow create, update: if isSignedIn();
+
+      allow create, update: if isAdmin() || (
+        isSignedIn()
+        && request.resource.data.artistUid == request.auth.uid
+        && isApprovedArtist(request.auth.uid)
+        && isArtistSubscriptionActive(request.auth.uid)
+      );
+
       allow delete: if false;
 
       match /likes/{likeUid} {
@@ -146,7 +191,9 @@ service cloud.firestore {
     }
 
     match /bookings/{bookingId} {
-      allow create: if isSignedIn() && request.resource.data.userUid == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.userUid == request.auth.uid
+        && request.resource.data.status == 'pending_artist_approval';
 
       allow read: if isAdmin() || (
         isSignedIn()
@@ -155,10 +202,38 @@ service cloud.firestore {
 
       allow update: if isAdmin() || (
         isSignedIn()
-        && (resource.data.userUid == request.auth.uid || resource.data.artistUid == request.auth.uid)
+        && resource.data.userUid == request.auth.uid
+      ) || (
+        isSignedIn()
+        && resource.data.artistUid == request.auth.uid
       );
 
       allow delete: if false;
+    }
+
+    match /bookingSlots/{slotId} {
+      allow read: if isSignedIn() || isAdmin();
+      allow create, update: if isAdmin() || isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.toUid == request.auth.uid);
+      allow create: if isAdmin() || (
+        isSignedIn()
+        && request.resource.data.toUid is string
+        && request.resource.data.fromUid == request.auth.uid
+      );
+      allow update: if isAdmin() || (isSignedIn() && resource.data.toUid == request.auth.uid) || (
+        isSignedIn()
+        && resource.data.fromUid == request.auth.uid
+        && request.resource.data.fromUid == request.auth.uid
+      );
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.toUid == request.auth.uid);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

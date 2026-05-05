@@ -10,7 +10,9 @@
     "set-admin-claim": "node scripts/set-admin-claim.js",
     "check-admin-claim": "node scripts/check-admin-claim.js",
     "set-user-password": "node scripts/set-user-password.js",
-    "delete-auth-user": "node scripts/delete-auth-user.js"
+    "delete-auth-user": "node scripts/delete-auth-user.js",
+    "verify-subscription-payment": "node scripts/verify-subscription-payment.js",
+    "sync-post-visibility": "node scripts/sync-post-visibility.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -34,9 +36,14 @@
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.10",
-    "firebase-admin": "^13.8.0",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-admin": "^10.1.0",
+    "globals": "^17.6.0",
     "typescript": "~5.9.2"
   }
 }

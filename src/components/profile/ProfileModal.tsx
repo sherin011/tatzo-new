@@ -328,7 +328,11 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
             {locationMissing ? (
               <Pressable onPress={() => setLocationEditorOpen(true)} style={styles.banner} accessibilityRole="button">
                 <View style={styles.bannerLeft}>
-                  <Ionicons name="location-outline" size={18} color={theme.colors.textInverse} />
+                  <Ionicons
+                    name="location-outline"
+                    size={18}
+                    color={theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textInverse}
+                  />
                   <View style={styles.bannerCopy}>
                     <Text style={styles.bannerTitle}>Complete your profile</Text>
                     <Text style={styles.bannerSub} numberOfLines={2}>
@@ -398,7 +402,11 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
                   style={[styles.upgradeCard, verificationStatus === 'pending' && styles.upgradeCardDisabled]}
                 >
                   <View style={styles.upgradeLeft}>
-                    <Ionicons name="sparkles-outline" size={18} color={theme.colors.textInverse} />
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={18}
+                      color={theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textInverse}
+                    />
                     <View style={styles.upgradeTextBlock}>
                       <Text style={styles.upgradeTitle}>Become an Artist</Text>
                       <Text style={styles.upgradeSub} numberOfLines={2}>
@@ -406,7 +414,11 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
                       </Text>
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textInverse} />
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textInverse}
+                  />
                 </Pressable>
 
                 <Pressable
@@ -415,7 +427,11 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
                   style={[styles.upgradeCard, verificationStatus === 'pending' && styles.upgradeCardDisabled]}
                 >
                   <View style={styles.upgradeLeft}>
-                    <Ionicons name="cart-outline" size={18} color={theme.colors.textInverse} />
+                    <Ionicons
+                      name="cart-outline"
+                      size={18}
+                      color={theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textInverse}
+                    />
                     <View style={styles.upgradeTextBlock}>
                       <Text style={styles.upgradeTitle}>Become a Dealer</Text>
                       <Text style={styles.upgradeSub} numberOfLines={2}>
@@ -423,7 +439,11 @@ const ProfileModal = ({ visible, onClose, onSignOut }: ProfileModalProps) => {
                       </Text>
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textInverse} />
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textInverse}
+                  />
                 </Pressable>
 
                 {verificationStatus === 'pending' ? (
@@ -629,8 +649,8 @@ const createStyles = (theme: AppTheme) =>
     banner: {
       borderRadius: 18,
       borderWidth: 1,
-      borderColor: theme.colors.border,
-      backgroundColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.18)' : 'rgba(122, 92, 255, 0.14)',
+      borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.34)' : theme.colors.border,
+      backgroundColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.12)' : 'rgba(122, 92, 255, 0.14)',
       paddingHorizontal: 14,
       paddingVertical: 12,
       flexDirection: 'row',
@@ -649,18 +669,18 @@ const createStyles = (theme: AppTheme) =>
       gap: 2,
     },
     bannerTitle: {
-      color: theme.colors.textInverse,
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
       fontSize: 13,
       fontWeight: '900',
     },
     bannerSub: {
-      color: 'rgba(245, 247, 250, 0.78)',
+      color: theme.mode === 'light' ? theme.colors.textMuted : 'rgba(245, 247, 250, 0.78)',
       fontSize: 12,
       fontWeight: '700',
       lineHeight: 16,
     },
     bannerCta: {
-      color: theme.colors.textInverse,
+      color: theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textInverse,
       fontSize: 12,
       fontWeight: '900',
       letterSpacing: 0.4,
@@ -721,11 +741,11 @@ const createStyles = (theme: AppTheme) =>
     upgradeCard: {
       borderRadius: 18,
       borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.12)',
+      borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.34)' : 'rgba(255, 255, 255, 0.12)',
       overflow: 'hidden',
       paddingHorizontal: 14,
       paddingVertical: 14,
-      backgroundColor: theme.mode === 'light' ? 'rgba(0, 229, 255, 0.10)' : 'rgba(0, 229, 255, 0.08)',
+      backgroundColor: theme.mode === 'light' ? '#FFFFFF' : 'rgba(0, 229, 255, 0.08)',
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -745,19 +765,19 @@ const createStyles = (theme: AppTheme) =>
       gap: 2,
     },
     upgradeTitle: {
-      color: theme.colors.textInverse,
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
       fontSize: 13,
       fontWeight: '900',
       letterSpacing: 0.3,
     },
     upgradeSub: {
-      color: 'rgba(245, 247, 250, 0.82)',
+      color: theme.mode === 'light' ? 'rgba(11, 11, 15, 0.78)' : 'rgba(245, 247, 250, 0.82)',
       fontSize: 12,
       fontWeight: '700',
       lineHeight: 16,
     },
     pendingNote: {
-      color: theme.colors.textMuted,
+      color: theme.mode === 'light' ? theme.colors.accentStrong : theme.colors.textMuted,
       fontSize: 12,
       fontWeight: '700',
       lineHeight: 16,

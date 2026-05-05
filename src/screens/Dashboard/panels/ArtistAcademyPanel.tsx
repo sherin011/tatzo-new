@@ -4,12 +4,17 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useAppTheme } from '../../../theme/useAppTheme';
 import type { AppTheme } from '../../../theme/theme';
 
-const ArtistAcademyPanel = () => {
+type ArtistAcademyPanelProps = {
+  header?: React.ReactNode;
+};
+
+const ArtistAcademyPanel = ({ header }: ArtistAcademyPanelProps) => {
   const { theme } = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   return (
     <View style={styles.wrap}>
+      {header ? <View style={styles.headerWrap}>{header}</View> : null}
       <LinearGradient colors={theme.gradients.accent} style={styles.hero}>
         <Text style={styles.title}>Academy (Mentor)</Text>
         <Text style={styles.sub}>Teach students. Lessons, safety modules, and progress tracking comes next.</Text>
@@ -30,9 +35,13 @@ const createStyles = (theme: AppTheme) =>
     wrap: {
       flex: 1,
       paddingHorizontal: 18,
-      paddingTop: 12,
+      paddingTop: 8,
       paddingBottom: 110,
       gap: 12,
+    },
+    headerWrap: {
+      gap: 12,
+      marginBottom: 2,
     },
     hero: {
       borderRadius: 24,

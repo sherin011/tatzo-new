@@ -20,5 +20,11 @@ service firebase.storage {
       allow read: if true;
       allow write: if isSignedIn() && request.auth.uid == uid;
     }
+
+    // Artist profile + post uploads used by mobile app.
+    match /artists/{uid}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+    }
   }
 }

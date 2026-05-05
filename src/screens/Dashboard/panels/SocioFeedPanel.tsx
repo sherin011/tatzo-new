@@ -2,10 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { auth } from '../../../config/firebaseConfig';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { auth, db } from '../../../config/firebaseConfig';
 import { useAppTheme } from '../../../theme/useAppTheme';
 import type { AppTheme } from '../../../theme/theme';
-import { dummyArtists } from '../../../data/dummyArtists';
 import { brand } from '../../../theme/brand';
 import { buildShareLink, sharePost, toggleFollow, toggleLike } from '../../../services/social';
 
@@ -15,93 +15,197 @@ type SocioFeedPanelProps = {
 
 type SocioPost = {
   id: string;
-  artistId: string;
+  artistUid?: string;
+  artistKey: string;
+  artistName: string;
+  artistHandle: string;
+  artistLocation?: string;
   caption: string;
   timeAgo: string;
-  likes: string;
+  likesCount: number;
   tags: readonly string[];
+  imageUrl?: string;
 };
 
-const POSTS: SocioPost[] = [
-  {
-    id: 'post-1',
-    artistId: 'artist-1',
-    caption: 'Geometric sleeve concept. Clean lines, crisp spacing, premium contrast.',
-    timeAgo: '2h',
-    likes: '21.2K',
-    tags: ['geometry', 'sleeve', 'fine line'],
-  },
-  {
-    id: 'post-2',
-    artistId: 'artist-2',
-    caption: 'Neo traditional flash set ready for booking. Bold color + strong silhouettes.',
-    timeAgo: '5h',
-    likes: '9.4K',
-    tags: ['neo traditional', 'bold', 'flash'],
-  },
-  {
-    id: 'post-3',
-    artistId: 'artist-3',
-    caption: 'Blackwork with premium finish. Deep blacks and balanced negative space.',
-    timeAgo: '1d',
-    likes: '17.8K',
-    tags: ['blackwork', 'premium', 'contrast'],
-  },
-  {
-    id: 'post-4',
-    artistId: 'artist-4',
-    caption: 'Micro realism portrait study. Soft gradients, sharp edges, natural highlights.',
-    timeAgo: '1d',
-    likes: '6.1K',
-    tags: ['micro', 'portrait', 'realism'],
-  },
-  {
-    id: 'post-5',
-    artistId: 'artist-5',
-    caption: 'Mandala dotwork layout. Symmetry first, texture second, flow always.',
-    timeAgo: '2d',
-    likes: '8.8K',
-    tags: ['dotwork', 'mandala', 'pattern'],
-  },
-];
+const relativeTime = (value: any) => {
+  const toMs = (v: any) => {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    if (v instanceof Date) return v.getTime();
+    if (typeof v?.toMillis === 'function') return v.toMillis();
+    if (typeof v?.seconds === 'number') return v.seconds * 1000;
+    return 0;
+  };
+
+  const ms = toMs(value);
+  if (!ms) return 'now';
+
+  const diffMin = Math.max(1, Math.floor((Date.now() - ms) / 60000));
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d`;
+};
 
 const SocioFeedPanel = ({ header }: SocioFeedPanelProps) => {
   const { theme } = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const accent = useMemo(() => [brand.electricNeonBlue, brand.cyberPurple, brand.electricNeonBlue] as const, []);
   const actionIcon = theme.colors.accent;
+
   const [likedMap, setLikedMap] = useState<Record<string, boolean>>({});
   const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
+  const [likeCountMap, setLikeCountMap] = useState<Record<string, number>>({});
+  const [livePosts, setLivePosts] = useState<SocioPost[]>([]);
+  const [pendingLikeMap, setPendingLikeMap] = useState<Record<string, boolean>>({});
+  const [pendingFollowMap, setPendingFollowMap] = useState<Record<string, boolean>>({});
+  const [pendingShareMap, setPendingShareMap] = useState<Record<string, boolean>>({});
+  const [loadingFeed, setLoadingFeed] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
 
-  const posts = useMemo(() => {
-    const byId = new Map(dummyArtists.map((artist) => [artist.id, artist]));
-    return POSTS.map((post) => ({ post, artist: byId.get(post.artistId)! })).filter((row) => Boolean(row.artist));
+  useEffect(() => {
+    let cancelled = false;
+    const visibilityCache = new Map<string, boolean>();
+
+    const toPostRow = (id: string, data: any): SocioPost => {
+      const artistUid = String(data.artistUid ?? '').trim();
+      const artistName = String(data.artistName ?? 'Artist').trim() || 'Artist';
+      const artistHandle = String(data.artistHandle ?? '').trim() || `@${artistName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+      const likesCount = Number(data.likesCount ?? 0);
+
+      return {
+        id,
+        artistUid: artistUid || undefined,
+        artistKey: artistUid || artistHandle,
+        artistName,
+        artistHandle,
+        artistLocation: '',
+        caption: String(data.caption ?? '').trim(),
+        timeAgo: relativeTime(data.createdAt),
+        likesCount: likesCount > 0 ? likesCount : 0,
+        tags: Array.isArray(data.tags) ? data.tags.map((t: any) => String(t)) : [],
+        imageUrl: String(data.imageUrl ?? '').trim(),
+      };
+    };
+
+    const isArtistVisible = async (artistUid: string) => {
+      const safeUid = String(artistUid ?? '').trim();
+      if (!safeUid) return false;
+      if (visibilityCache.has(safeUid)) return visibilityCache.get(safeUid) === true;
+      try {
+        const snap = await getDoc(doc(db, 'artists', safeUid));
+        if (!snap.exists()) {
+          visibilityCache.set(safeUid, false);
+          return false;
+        }
+        const data = snap.data() as any;
+        const approved = data?.verifiedPro === true || String(data?.verificationStatus ?? '') === 'approved';
+        const visible = approved && data?.isVisible !== false;
+        visibilityCache.set(safeUid, visible);
+        return visible;
+      } catch {
+        visibilityCache.set(safeUid, false);
+        return false;
+      }
+    };
+
+    const loadFallbackRows = async () => {
+      let fallbackSnap;
+      try {
+        fallbackSnap = await getDocs(
+          query(collection(db, 'posts'), where('status', '==', 'active'), orderBy('createdAt', 'desc'), limit(24)),
+        );
+      } catch {
+        // Composite index might still be building; use broad fallback and filter locally.
+        fallbackSnap = await getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(48)));
+      }
+      const rows: SocioPost[] = [];
+
+      for (const row of fallbackSnap.docs) {
+        const data = row.data() as any;
+        if (String(data.status ?? '') !== 'active') continue;
+        const strictApproved = data.artistApproved === true && data.artistVisible === true;
+        if (strictApproved) {
+          rows.push(toPostRow(row.id, data));
+          continue;
+        }
+        const safeArtistUid = String(data.artistUid ?? '').trim();
+        if (!safeArtistUid) continue;
+        const fallbackVisible = await isArtistVisible(safeArtistUid);
+        if (!fallbackVisible) continue;
+        rows.push(toPostRow(row.id, data));
+      }
+
+      if (!cancelled) {
+        setFeedError(null);
+        setLoadingFeed(false);
+        setLivePosts(rows);
+      }
+    };
+
+    const q = query(
+      collection(db, 'posts'),
+      where('status', '==', 'active'),
+      where('artistApproved', '==', true),
+      where('artistVisible', '==', true),
+      orderBy('createdAt', 'desc'),
+      limit(24),
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs.map((d) => toPostRow(d.id, d.data() as any));
+        if (rows.length > 0) {
+          setFeedError(null);
+          setLoadingFeed(false);
+          setLivePosts(rows);
+          return;
+        }
+        void loadFallbackRows().catch(() => {
+          if (!cancelled) {
+            setFeedError('Something went wrong. Try again.');
+            setLoadingFeed(false);
+            setLivePosts([]);
+          }
+        });
+      },
+      () => {
+        void loadFallbackRows().catch(() => {
+          setFeedError('Something went wrong. Try again.');
+          setLoadingFeed(false);
+          setLivePosts([]);
+        });
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
+
+  const posts = useMemo(() => livePosts, [livePosts]);
 
   useEffect(() => {
     const actor = auth.currentUser;
     if (!actor) return;
     let isActive = true;
 
-    (async () => {
-      try {
-        // Lightweight best-effort state hydration (no blocking UI).
-        // If it fails, we still allow actions to write.
-        const nextLiked: Record<string, boolean> = {};
-        const nextFollowing: Record<string, boolean> = {};
-        for (const row of posts) {
-          // We don't hydrate from Firestore yet to keep reads low.
-          nextLiked[row.post.id] = false;
-          nextFollowing[row.artist.id] = false;
-        }
-        if (isActive) {
-          setLikedMap(nextLiked);
-          setFollowingMap(nextFollowing);
-        }
-      } catch {
-        // ignore
-      }
-    })();
+    const nextLiked: Record<string, boolean> = {};
+    const nextFollowing: Record<string, boolean> = {};
+    const nextLikeCounts: Record<string, number> = {};
+    posts.forEach((row) => {
+      nextLiked[row.id] = false;
+      nextFollowing[row.artistKey] = false;
+      nextLikeCounts[row.id] = Number(row.likesCount ?? 0);
+    });
+
+    if (isActive) {
+      setLikedMap(nextLiked);
+      setFollowingMap(nextFollowing);
+      setLikeCountMap(nextLikeCounts);
+    }
 
     return () => {
       isActive = false;
@@ -119,7 +223,7 @@ const SocioFeedPanel = ({ header }: SocioFeedPanelProps) => {
   return (
     <FlatList
       data={posts}
-      keyExtractor={(item) => item.post.id}
+      keyExtractor={(item) => item.id}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingBottom: 110 }}
       ListHeaderComponent={
@@ -136,12 +240,14 @@ const SocioFeedPanel = ({ header }: SocioFeedPanelProps) => {
           <View style={styles.cardHeader}>
             <View style={styles.profileRow}>
               <LinearGradient colors={accent} style={styles.avatar}>
-                <Text style={styles.avatarText}>{item.artist.name.charAt(0)}</Text>
+                <Text style={styles.avatarText}>{item.artistName.charAt(0)}</Text>
               </LinearGradient>
               <View style={styles.profileCopy}>
-                <Text style={styles.artistName}>{item.artist.name}</Text>
+                <Text style={styles.artistName}>{item.artistName}</Text>
                 <Text style={styles.artistMeta}>
-                  {item.artist.handle} | {item.artist.location} | {item.post.timeAgo}
+                  {item.artistHandle}
+                  {item.artistLocation ? ` | ${item.artistLocation}` : ''}
+                  {` | ${item.timeAgo}`}
                 </Text>
               </View>
             </View>
@@ -152,74 +258,99 @@ const SocioFeedPanel = ({ header }: SocioFeedPanelProps) => {
 
           <LinearGradient colors={[theme.colors.backgroundAlt, 'rgba(0, 229, 255, 0.16)', 'rgba(122, 92, 255, 0.22)']} style={styles.media}>
             <View style={styles.mediaOverlay}>
-              <Text style={styles.mediaLabel}>Design preview placeholder</Text>
+              <Text style={styles.mediaLabel}>{item.imageUrl ? item.imageUrl : 'Design preview placeholder'}</Text>
             </View>
           </LinearGradient>
 
           <View style={styles.actionsRow}>
             <TouchableOpacity
               activeOpacity={0.85}
+              disabled={pendingLikeMap[item.id] === true}
               onPress={async () => {
                 if (!ensureSignedIn()) return;
+                if (pendingLikeMap[item.id]) return;
+                const wasLiked = Boolean(likedMap[item.id]);
+                const previousCount = Number(likeCountMap[item.id] ?? item.likesCount ?? 0);
+                const optimisticLiked = !wasLiked;
+                const optimisticCount = Math.max(0, previousCount + (optimisticLiked ? 1 : -1));
+
+                setPendingLikeMap((prev) => ({ ...prev, [item.id]: true }));
+                setLikedMap((prev) => ({ ...prev, [item.id]: optimisticLiked }));
+                setLikeCountMap((prev) => ({ ...prev, [item.id]: optimisticCount }));
                 try {
                   const result = await toggleLike({
-                    postId: item.post.id,
-                    artist: { displayName: item.artist.name, handle: item.artist.handle },
-                    postPreview: item.post.caption,
+                    postId: item.id,
+                    artist: { uid: item.artistUid, displayName: item.artistName, handle: item.artistHandle },
+                    postPreview: item.caption,
                   });
-                  if (!result.artistUid) {
-                    Alert.alert('Tatzo', 'This artist is not onboarded yet. Notification will work once they sign up as an artist.');
-                  }
-                  setLikedMap((prev) => ({ ...prev, [item.post.id]: result.liked }));
+                  const finalCount = Math.max(0, previousCount + (result.liked ? 1 : -1));
+                  setLikedMap((prev) => ({ ...prev, [item.id]: result.liked }));
+                  setLikeCountMap((prev) => ({ ...prev, [item.id]: finalCount }));
                 } catch (error: any) {
+                  setLikedMap((prev) => ({ ...prev, [item.id]: wasLiked }));
+                  setLikeCountMap((prev) => ({ ...prev, [item.id]: previousCount }));
                   Alert.alert('Tatzo', error?.message ?? 'Could not like right now.');
+                } finally {
+                  setPendingLikeMap((prev) => ({ ...prev, [item.id]: false }));
                 }
               }}
-              style={styles.actionButton}
+              style={[styles.actionButton, pendingLikeMap[item.id] && styles.actionButtonDisabled]}
             >
-              <Ionicons name={likedMap[item.post.id] ? 'heart' : 'heart-outline'} size={18} color={actionIcon} />
+              <Ionicons name={likedMap[item.id] ? 'heart' : 'heart-outline'} size={18} color={actionIcon} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.85}
+              disabled={pendingShareMap[item.id] === true}
               onPress={async () => {
                 if (!ensureSignedIn()) return;
+                if (pendingShareMap[item.id]) return;
+                setPendingShareMap((prev) => ({ ...prev, [item.id]: true }));
                 try {
-                  const link = buildShareLink(item.post.id);
-                  const result = await sharePost({
-                    postId: item.post.id,
-                    artist: { displayName: item.artist.name, handle: item.artist.handle },
-                    postPreview: item.post.caption,
-                    shareMessage: `Tatzo\n${link}\n\n${item.post.caption}`,
+                  const link = buildShareLink(item.id);
+                  await sharePost({
+                    postId: item.id,
+                    artist: { uid: item.artistUid, displayName: item.artistName, handle: item.artistHandle },
+                    postPreview: item.caption,
+                    shareMessage: `Tatzo\n${link}\n\n${item.caption}`,
                   });
-                  if (!result.artistUid) {
-                    Alert.alert('Tatzo', 'This artist is not onboarded yet. Notification will work once they sign up as an artist.');
-                  }
                 } catch (error: any) {
                   Alert.alert('Tatzo', error?.message ?? 'Could not share right now.');
+                } finally {
+                  setPendingShareMap((prev) => ({ ...prev, [item.id]: false }));
                 }
               }}
-              style={styles.actionButton}
+              style={[styles.actionButton, pendingShareMap[item.id] && styles.actionButtonDisabled]}
             >
               <Ionicons name="share-social-outline" size={18} color={actionIcon} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.85}
+              disabled={pendingFollowMap[item.artistKey] === true}
               onPress={async () => {
                 if (!ensureSignedIn()) return;
+                if (pendingFollowMap[item.artistKey]) return;
+                const previous = Boolean(followingMap[item.artistKey]);
+                const optimistic = !previous;
+                setPendingFollowMap((prev) => ({ ...prev, [item.artistKey]: true }));
+                setFollowingMap((prev) => ({ ...prev, [item.artistKey]: optimistic }));
                 try {
-                  const result = await toggleFollow({ artist: { displayName: item.artist.name, handle: item.artist.handle } });
-                  if (!result.artistUid) {
-                    Alert.alert('Tatzo', 'This artist is not onboarded yet. Follow will work once they sign up as an artist.');
+                  const result = await toggleFollow({ artist: { uid: item.artistUid, displayName: item.artistName, handle: item.artistHandle } });
+                  if (!result.targetUid) {
+                    setFollowingMap((prev) => ({ ...prev, [item.artistKey]: previous }));
+                    Alert.alert('Tatzo', 'Artist profile mapping not found yet.');
                   } else {
-                    setFollowingMap((prev) => ({ ...prev, [item.artist.id]: result.following }));
+                    setFollowingMap((prev) => ({ ...prev, [item.artistKey]: result.following }));
                   }
                 } catch (error: any) {
+                  setFollowingMap((prev) => ({ ...prev, [item.artistKey]: previous }));
                   Alert.alert('Tatzo', error?.message ?? 'Could not follow right now.');
+                } finally {
+                  setPendingFollowMap((prev) => ({ ...prev, [item.artistKey]: false }));
                 }
               }}
-              style={styles.actionButton}
+              style={[styles.actionButton, pendingFollowMap[item.artistKey] && styles.actionButtonDisabled]}
             >
-              <Ionicons name={followingMap[item.artist.id] ? 'person' : 'person-add-outline'} size={18} color={actionIcon} />
+              <Ionicons name={followingMap[item.artistKey] ? 'person' : 'person-add-outline'} size={18} color={actionIcon} />
             </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.85}
@@ -231,18 +362,32 @@ const SocioFeedPanel = ({ header }: SocioFeedPanelProps) => {
           </View>
 
           <View style={styles.metaRow}>
-            <Text style={styles.likes}>{item.post.likes} likes</Text>
+            <Text style={styles.likes}>{Number(likeCountMap[item.id] ?? item.likesCount ?? 0)} likes</Text>
           </View>
-          <Text style={styles.caption}>{item.post.caption}</Text>
+          <Text style={styles.caption}>{item.caption}</Text>
           <View style={styles.tagsRow}>
-            {item.post.tags.map((tag) => (
-              <View key={tag} style={styles.tagPill}>
+            {item.tags.map((tag) => (
+              <View key={`${item.id}_${tag}`} style={styles.tagPill}>
                 <Text style={styles.tagText}>{tag}</Text>
               </View>
             ))}
           </View>
         </View>
       )}
+      ListEmptyComponent={
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyTitle}>
+            {loadingFeed ? 'Loading feed...' : feedError ? 'Something went wrong' : 'No artist posts yet'}
+          </Text>
+          <Text style={styles.emptySub}>
+            {loadingFeed
+              ? 'Please wait a moment.'
+              : feedError
+                ? 'Try again.'
+                : 'Approved artist posts will appear here.'}
+          </Text>
+        </View>
+      }
     />
   );
 };
@@ -337,9 +482,9 @@ const createStyles = (theme: AppTheme) =>
     },
     mediaLabel: {
       color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
-      fontSize: 12,
+      fontSize: 11,
       fontWeight: '700',
-      letterSpacing: 0.6,
+      letterSpacing: 0.4,
     },
     actionsRow: {
       flexDirection: 'row',
@@ -357,6 +502,9 @@ const createStyles = (theme: AppTheme) =>
       backgroundColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.08)' : 'rgba(255, 255, 255, 0.06)',
       borderWidth: 1,
       borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.18)' : theme.colors.border,
+    },
+    actionButtonDisabled: {
+      opacity: 0.62,
     },
     reportButton: {
       marginLeft: 'auto',
@@ -399,6 +547,26 @@ const createStyles = (theme: AppTheme) =>
       color: theme.mode === 'light' ? 'rgba(58, 0, 132, 0.85)' : 'rgba(237, 229, 255, 0.95)',
       fontSize: 11,
       fontWeight: '700',
+    },
+    emptyWrap: {
+      paddingHorizontal: 20,
+      paddingVertical: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    emptyTitle: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+      fontSize: 14,
+      fontWeight: '900',
+      letterSpacing: 0.3,
+      textTransform: 'uppercase',
+    },
+    emptySub: {
+      color: theme.colors.textMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      textAlign: 'center',
     },
   });
 

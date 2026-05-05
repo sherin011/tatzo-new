@@ -20,6 +20,24 @@ export type VerificationDoc = {
   rejectReason?: string;
 };
 
+export type DealerVerificationStatus = 'pending' | 'approved' | 'rejected' | 'unsubmitted';
+
+export type DealerVerificationDoc = {
+  uid: string;
+  shopName?: string;
+  businessEmail?: string;
+  idProof?: string;
+  portfolioLink?: string;
+  upiId?: string;
+  bankDetails?: string;
+  locationCity?: string;
+  locationArea?: string;
+  status: DealerVerificationStatus;
+  rejectReason?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
 export type UserDoc = {
   uid?: string;
   email?: string | null;
@@ -30,6 +48,15 @@ export type UserDoc = {
   verificationRejectReason?: string;
   locationCity?: string;
   locationArea?: string;
+  artistName?: string;
+  startingPrice?: number;
+  experience?: string;
+  bio?: string;
+  styles?: string[];
+  profileImageUrl?: string;
+  dealerRequestStatus?: DealerVerificationStatus;
+  dealerRejectReason?: string;
+  dealerRequestedAt?: unknown;
 };
 
 export type AdminDashboardMetrics = {
@@ -46,4 +73,7 @@ export type AdminDashboardMetrics = {
   pendingVerifications: number;
   approvedVerifications: number;
   rejectedVerifications: number;
+  pendingDealerVerifications: number;
+  approvedDealerVerifications: number;
+  rejectedDealerVerifications: number;
 };

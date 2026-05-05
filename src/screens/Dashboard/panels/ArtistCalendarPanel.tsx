@@ -23,15 +23,14 @@ const ArtistCalendarPanel = ({ header }: ArtistCalendarPanelProps) => {
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [items, setItems] = useState<BookingRow[]>([]);
-  const artistName = auth.currentUser?.displayName ?? '';
+  const artistUid = auth.currentUser?.uid ?? '';
 
   useEffect(() => {
-    if (!artistName) return;
+    if (!artistUid) return;
 
     const q = query(
       collection(db, 'bookings'),
-      where('artistName', '==', artistName),
-      where('status', 'in', ['confirmed', 'completed']),
+      where('artistUid', '==', artistUid),
       limit(80),
     );
 
@@ -51,6 +50,7 @@ const ArtistCalendarPanel = ({ header }: ArtistCalendarPanelProps) => {
                 status: data.status,
               } as BookingRow;
             })
+            .filter((row) => row.status === 'confirmed' || row.status === 'completed')
             .sort((a, b) => String(a.dateISO ?? '').localeCompare(String(b.dateISO ?? ''))),
         );
       },
@@ -58,7 +58,7 @@ const ArtistCalendarPanel = ({ header }: ArtistCalendarPanelProps) => {
     );
 
     return () => unsub();
-  }, [artistName]);
+  }, [artistUid]);
 
   return (
     <View style={styles.container}>

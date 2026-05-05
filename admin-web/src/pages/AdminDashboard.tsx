@@ -2,16 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { auth } from '../firebase';
 import {
+  approveDealerVerification,
   approveVerification,
   getAdminDashboardMetrics,
+  getDealerVerificationWithUser,
   getVerificationWithUser,
+  listPendingDealerVerifications,
   listPendingVerifications,
   listRecentVerifications,
+  rejectDealerVerification,
   rejectVerification,
 } from '../services';
-import type { AdminDashboardMetrics, VerificationDoc } from '../types';
+import type { AdminDashboardMetrics, DealerVerificationDoc, VerificationDoc } from '../types';
 
 type VerificationRow = VerificationDoc & { id: string };
+type DealerVerificationRow = DealerVerificationDoc & { id: string };
 
 const toReadableDate = (value: unknown) => {
   if (!value) return '-';
@@ -30,6 +35,7 @@ const toReadableDate = (value: unknown) => {
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState<AdminDashboardMetrics | null>(null);
   const [pendingRows, setPendingRows] = useState<VerificationRow[]>([]);
+  const [pendingDealerRows, setPendingDealerRows] = useState<DealerVerificationRow[]>([]);
   const [recentRows, setRecentRows] = useState<VerificationRow[]>([]);
   const [queryText, setQueryText] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'artist' | 'dealer'>('all');
@@ -44,13 +50,15 @@ export default function AdminDashboard() {
     setError('');
 
     try {
-      const [nextMetrics, pending, recent] = await Promise.all([
+      const [nextMetrics, pending, pendingDealers, recent] = await Promise.all([
         getAdminDashboardMetrics(),
         listPendingVerifications(),
+        listPendingDealerVerifications(),
         listRecentVerifications(10),
       ]);
       setMetrics(nextMetrics);
       setPendingRows(pending);
+      setPendingDealerRows(pendingDealers);
       setRecentRows(recent);
     } catch (e: any) {
       const message = e?.message ?? 'Failed to load dashboard metrics.';
@@ -59,9 +67,7 @@ export default function AdminDashboard() {
         message.toLowerCase().includes('missing or insufficient permissions');
 
       if (hasPermissionIssue) {
-        setError(
-          'Firestore permission denied. Verify admin claim, sign out/sign in again, and deploy latest firestore.rules.',
-        );
+        setError('Firestore permission denied. Verify admin claim, sign out/sign in again, and deploy latest firestore.rules.');
       } else {
         setError(message);
       }
@@ -94,9 +100,7 @@ export default function AdminDashboard() {
     setError('');
     try {
       const data = await getVerificationWithUser(uid);
-      if (!data.verification) {
-        throw new Error('Verification document missing.');
-      }
+      if (!data.verification) throw new Error('Verification document missing.');
       const adminUid = auth.currentUser?.uid ?? 'admin';
       await approveVerification({
         uid,
@@ -122,15 +126,50 @@ export default function AdminDashboard() {
     setError('');
     try {
       const adminUid = auth.currentUser?.uid ?? 'admin';
-      await rejectVerification({
-        uid,
-        requestedRole,
-        adminUid,
-        reason: reason.trim(),
-      });
+      await rejectVerification({ uid, requestedRole, adminUid, reason: reason.trim() });
       await loadAll(false);
     } catch (e: any) {
       setError(e?.message ?? 'Reject failed.');
+    } finally {
+      setActionUid('');
+    }
+  };
+
+  const onApproveDealer = async (uid: string) => {
+    if (!uid) return;
+    setActionUid(uid);
+    setError('');
+    try {
+      const data = await getDealerVerificationWithUser(uid);
+      if (!data.dealerVerification) throw new Error('Dealer request not found.');
+      const adminUid = auth.currentUser?.uid ?? 'admin';
+      await approveDealerVerification({
+        uid,
+        adminUid,
+        user: data.user,
+        dealerVerification: data.dealerVerification,
+      });
+      await loadAll(false);
+    } catch (e: any) {
+      setError(e?.message ?? 'Dealer approve failed.');
+    } finally {
+      setActionUid('');
+    }
+  };
+
+  const onRejectDealer = async (uid: string) => {
+    if (!uid) return;
+    const reason = window.prompt('Enter dealer reject reason');
+    if (!reason || !reason.trim()) return;
+
+    setActionUid(uid);
+    setError('');
+    try {
+      const adminUid = auth.currentUser?.uid ?? 'admin';
+      await rejectDealerVerification({ uid, adminUid, reason: reason.trim() });
+      await loadAll(false);
+    } catch (e: any) {
+      setError(e?.message ?? 'Dealer reject failed.');
     } finally {
       setActionUid('');
     }
@@ -150,6 +189,18 @@ export default function AdminDashboard() {
       return haystack.includes(query);
     });
   }, [pendingRows, queryText, roleFilter]);
+
+  const filteredDealers = useMemo(() => {
+    const query = queryText.trim().toLowerCase();
+    return pendingDealerRows.filter((row) => {
+      if (!query) return true;
+      const haystack = [row.shopName, row.businessEmail, row.uid, row.locationArea, row.locationCity]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [pendingDealerRows, queryText]);
 
   const roleBars = useMemo(() => {
     const total = metrics?.totalUsers ?? 0;
@@ -206,7 +257,8 @@ export default function AdminDashboard() {
             <div className="kpi-card"><span>Total Users</span><strong>{metrics.totalUsers}</strong></div>
             <div className="kpi-card"><span>Artists</span><strong>{metrics.totalArtists}</strong></div>
             <div className="kpi-card"><span>Dealers</span><strong>{metrics.totalDealers}</strong></div>
-            <div className="kpi-card"><span>Pending Verifications</span><strong>{metrics.pendingVerifications}</strong></div>
+            <div className="kpi-card"><span>Pending Artist Verifications</span><strong>{metrics.pendingVerifications}</strong></div>
+            <div className="kpi-card"><span>Pending Dealer Requests</span><strong>{metrics.pendingDealerVerifications}</strong></div>
             <div className="kpi-card"><span>Total Posts</span><strong>{metrics.totalPosts}</strong></div>
             <div className="kpi-card"><span>Total Bookings</span><strong>{metrics.totalBookings}</strong></div>
           </div>
@@ -241,7 +293,7 @@ export default function AdminDashboard() {
 
           <div className="queue-card">
             <div className="queue-head">
-              <h3>Pending Approval Queue</h3>
+              <h3>Pending Artist/Dealer Verification Queue</h3>
               <div className="filter-row">
                 <input
                   value={queryText}
@@ -296,7 +348,45 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
-            {filteredPending.length === 0 ? <div className="hint">No pending verification requests.</div> : null}
+            {filteredPending.length === 0 ? <div className="hint">No pending artist/dealer role verifications.</div> : null}
+          </div>
+
+          <div className="queue-card">
+            <h3>Pending Dealer Requests (Secondary Flow)</h3>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Studio</th>
+                    <th>Location</th>
+                    <th>Business Email</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDealers.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.shopName ?? '-'}</td>
+                      <td>{[row.locationArea, row.locationCity].filter(Boolean).join(', ') || '-'}</td>
+                      <td>{row.businessEmail ?? '-'}</td>
+                      <td>{toReadableDate(row.updatedAt)}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button disabled={actionUid === row.uid} onClick={() => void onApproveDealer(row.uid)}>
+                            {actionUid === row.uid ? '...' : 'Approve'}
+                          </button>
+                          <button disabled={actionUid === row.uid} onClick={() => void onRejectDealer(row.uid)} className="danger-btn">
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {filteredDealers.length === 0 ? <div className="hint">No pending dealer requests.</div> : null}
           </div>
 
           <div className="queue-card">
@@ -308,7 +398,7 @@ export default function AdminDashboard() {
                     <strong>{row.shopName ?? row.uid}</strong>
                     <div className="muted small">{row.uid}</div>
                   </div>
-                  <div className={`status-pill status-${row.status}`}>{row.status.toUpperCase()}</div>
+                  <div className={`status-pill status-${row.status}`}>{String(row.status ?? '').toUpperCase()}</div>
                 </div>
               ))}
             </div>

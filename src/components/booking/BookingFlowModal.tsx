@@ -1,15 +1,12 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../../config/firebaseConfig';
-import { getPaymentsServerUrl } from '../../config/payments';
 import { useAppTheme } from '../../theme/useAppTheme';
 import type { AppTheme } from '../../theme/theme';
 import type { DummyArtist } from '../../data/dummyArtists';
 import { evaluateSkinChecker, skinCheckerQuestions, type SkinCheckerFlag } from '../../data/skinChecker';
 import { createBooking } from '../../services/bookings';
-import { brand } from '../../theme/brand';
+import type { TimeSlotId } from '../../types/app';
 import GradientButton from '../ui/GradientButton';
 import CalendarPickerModal from './CalendarPickerModal';
 
@@ -19,10 +16,16 @@ type BookingFlowModalProps = {
   onClose: () => void;
 };
 
-type Step = 'gate' | 'skin' | 'result' | 'slot' | 'pay' | 'done';
+type Step = 'gate' | 'skin' | 'result' | 'slot' | 'done';
 
 const pad2 = (n: number) => `${n}`.padStart(2, '0');
 const toISODate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+const SLOT_OPTIONS: Array<{ id: TimeSlotId; label: string }> = [
+  { id: 'morning', label: 'Morning' },
+  { id: 'afternoon', label: 'Afternoon' },
+  { id: 'evening', label: 'Evening' },
+];
 
 const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) => {
   const { theme } = useAppTheme();
@@ -33,14 +36,15 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [flag, setFlag] = useState<SkinCheckerFlag>('GREEN');
   const [score, setScore] = useState(0);
+  const [riskStatus, setRiskStatus] = useState<'safe' | 'warning' | 'unsafe'>('safe');
+  const [riskNotes, setRiskNotes] = useState('');
 
   const [dateISO, setDateISO] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
     return toISODate(d);
   });
-  const [bookingId, setBookingId] = useState<string | null>(null);
-  const [paymentHint, setPaymentHint] = useState<'idle' | 'opened' | 'verified'>('idle');
+  const [slotId, setSlotId] = useState<TimeSlotId>('morning');
   const [busy, setBusy] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
 
@@ -50,11 +54,12 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
     setAnswers({});
     setFlag('GREEN');
     setScore(0);
+    setRiskStatus('safe');
+    setRiskNotes('');
     const d = new Date();
     d.setDate(d.getDate() + 2);
     setDateISO(toISODate(d));
-    setBookingId(null);
-    setPaymentHint('idle');
+    setSlotId('morning');
     setBusy(false);
     setCalendarOpen(false);
   };
@@ -63,21 +68,6 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
     reset();
     onClose();
   };
-  useEffect(() => {
-    if (!visible || !bookingId) return;
-
-    const unsub = onSnapshot(doc(db, 'bookings', bookingId), (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data() as any;
-      const status = String(data?.status ?? '');
-      if (status === 'pending_artist_approval' || status === 'confirmed') {
-        setPaymentHint('verified');
-        setStep('done');
-      }
-    });
-
-    return () => unsub();
-  }, [bookingId, visible]);
 
   if (!artist) return null;
 
@@ -91,7 +81,23 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
     setDateISO(toISODate(next));
   };
 
-  const deposit = 249;
+  const continueAfterRisk = () => {
+    if (riskStatus === 'safe') {
+      setStep('slot');
+      return;
+    }
+
+    const title = riskStatus === 'unsafe' ? 'High Risk Warning' : 'Skin Warning';
+    const message =
+      riskStatus === 'unsafe'
+        ? 'AI flagged unsafe skin condition. Proceed only if you understand the risk and will consult the artist carefully.'
+        : 'AI flagged moderate risk. Proceed only if you understand the precautions.';
+
+    Alert.alert('Tatzo', `${title}\n\n${message}`, [
+      { text: 'Go Back', style: 'cancel' },
+      { text: 'I Understand, Continue', onPress: () => setStep('slot') },
+    ]);
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
@@ -108,7 +114,7 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
           <View style={styles.body}>
             <Text style={styles.h1}>Before booking</Text>
             <Text style={styles.p}>
-              We kindly request you to take the AI Skin Checker. This helps ensure safer healing and better outcomes.
+              Please complete AI Skin Checker first. This helps the artist review your skin condition safely before approval.
             </Text>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>{artist.name}</Text>
@@ -167,9 +173,12 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
                       setQIndex((i) => i + 1);
                       return;
                     }
+
                     const evald = evaluateSkinChecker(answers);
                     setFlag(evald.flag);
                     setScore(evald.score);
+                    setRiskStatus(evald.status);
+                    setRiskNotes(evald.notes);
                     setStep('result');
                   }}
                   size="md"
@@ -181,37 +190,42 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
 
         {step === 'result' ? (
           <View style={styles.body}>
-            <Text style={styles.h1}>Result</Text>
-            <View style={[styles.flagCard, flag === 'GREEN' ? styles.flagGreen : styles.flagRed]}>
+            <Text style={styles.h1}>AI Result</Text>
+            <View
+              style={[
+                styles.flagCard,
+                riskStatus === 'safe' ? styles.flagGreen : riskStatus === 'warning' ? styles.flagWarn : styles.flagRed,
+              ]}
+            >
               <Text style={styles.flagText}>{flag}</Text>
-              <Text style={styles.flagSub}>Score: {score}</Text>
+              <Text style={styles.flagSub}>Risk Score: {score}</Text>
             </View>
 
-            {flag === 'RED' ? (
-              <>
-                <Text style={styles.p}>
-                  We recommend checking with a dermatologist before tattooing. Meanwhile: stay hydrated, avoid alcohol,
-                  and allow irritated skin to recover.
-                </Text>
-                <TouchableOpacity activeOpacity={0.9} onPress={close} style={styles.secondaryBtn}>
-                  <Ionicons name="close" size={18} color={theme.colors.accent} />
-                  <Text style={styles.secondaryText}>Close</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <Text style={styles.p}>
-                  Green flag. You can proceed to choose a date and request a booking slot.
-                </Text>
-                <GradientButton title="Continue to Booking" onPress={() => setStep('slot')} />
-              </>
-            )}
+            <Text style={styles.p}>{riskNotes}</Text>
+
+            {riskStatus === 'unsafe' ? (
+              <Text style={styles.warnText}>Strong warning: consider dermatologist review before tattoo booking.</Text>
+            ) : null}
+
+            <View style={styles.navRow}>
+              <TouchableOpacity activeOpacity={0.9} onPress={() => setStep('skin')} style={styles.secondaryBtn}>
+                <Ionicons name="create-outline" size={18} color={theme.colors.accent} />
+                <Text style={styles.secondaryText}>Review Answers</Text>
+              </TouchableOpacity>
+              <View style={styles.navGrow}>
+                <GradientButton
+                  title={riskStatus === 'safe' ? 'Continue to Slot' : 'Continue with Warning'}
+                  onPress={continueAfterRisk}
+                  size="md"
+                />
+              </View>
+            </View>
           </View>
         ) : null}
 
         {step === 'slot' ? (
           <View style={styles.body}>
-            <Text style={styles.h1}>Booking Slot</Text>
+            <Text style={styles.h1}>Booking Request</Text>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>{artist.name}</Text>
               <Text style={styles.cardSub}>
@@ -230,42 +244,61 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
                 <Ionicons name="chevron-forward" size={18} color={theme.colors.accent} />
               </TouchableOpacity>
             </View>
+
             <TouchableOpacity activeOpacity={0.9} onPress={() => setCalendarOpen(true)} style={styles.calendarBtn}>
               <Ionicons name="calendar-outline" size={18} color={theme.colors.accent} />
               <Text style={styles.calendarText}>Open calendar</Text>
             </TouchableOpacity>
 
-            <Text style={styles.p}>Artist will approve your requested slot.</Text>
+            <View style={styles.slotRow}>
+              {SLOT_OPTIONS.map((slot) => {
+                const active = slotId === slot.id;
+                return (
+                  <TouchableOpacity
+                    key={slot.id}
+                    activeOpacity={0.9}
+                    onPress={() => setSlotId(slot.id)}
+                    style={[styles.slotBtn, active && styles.slotBtnActive]}
+                  >
+                    <Text style={[styles.slotText, active && styles.slotTextActive]}>{slot.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.p}>Artist will review this request first. Payment opens only after artist approval.</Text>
 
             <GradientButton
-              title={busy ? 'Creating...' : 'Proceed to Payment'}
+              title={busy ? 'Submitting...' : 'Submit Booking Request'}
               loading={busy}
               onPress={async () => {
                 setBusy(true);
                 try {
-                  const created = await createBooking({
+                  await createBooking({
                     artistId: artist.id,
+                    artistUid: artist.id,
                     artistName: artist.name,
+                    artistHandle: artist.handle,
                     location: artist.location,
                     dateISO,
+                    slotId,
                     startingFrom: artist.startingFrom ?? 0,
-                    depositAmount: deposit,
-                    skinFlag: flag,
-                    skinScore: score,
+                    depositAmount: 249,
+                    aiSkinCheckStatus: riskStatus,
+                    aiRiskScore: score,
+                    aiSkinCheckNotes: riskNotes,
+                    aiFlagForArtist: riskStatus !== 'safe',
                     skinAnswers: answers,
                   });
-                  if (created.alreadyExists) {
-                    Alert.alert('Tatzo', 'You already requested a booking for this artist on this date.');
-                  }
-                  setBookingId(created.id);
-                  setStep('pay');
+                  setStep('done');
                 } catch (e: any) {
-                  Alert.alert('Tatzo', e?.message ?? 'Could not create booking.');
+                  Alert.alert('Tatzo', e?.message ?? 'Could not create booking request.');
                 } finally {
                   setBusy(false);
                 }
               }}
             />
+
             <CalendarPickerModal
               visible={calendarOpen}
               initialDateISO={dateISO}
@@ -275,48 +308,12 @@ const BookingFlowModal = ({ visible, artist, onClose }: BookingFlowModalProps) =
           </View>
         ) : null}
 
-        {step === 'pay' ? (
-          <View style={styles.body}>
-            <Text style={styles.h1}>Payment</Text>
-            <Text style={styles.p}>Pay Rs. {deposit} to confirm your booking request.</Text>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Deposit</Text>
-              <Text style={styles.cardSub}>Rs. {deposit} (Razorpay)</Text>
-            </View>
-            <GradientButton
-              title={busy ? 'Opening...' : 'Pay Rs. ' + deposit}
-              disabled={!bookingId}
-              loading={busy}
-              onPress={async () => {
-                if (!bookingId) return;
-                setBusy(true);
-                try {
-                  const user = auth.currentUser;
-                  const baseUrl = getPaymentsServerUrl();
-                  const name = encodeURIComponent(user?.displayName ?? 'Tatzo User');
-                  const email = encodeURIComponent(user?.email ?? '');
-                  const phone = encodeURIComponent('');
-                  const url = `${baseUrl}/pay?bookingId=${encodeURIComponent(bookingId)}&amountRupees=${encodeURIComponent(String(deposit))}&name=${name}&email=${email}&phone=${phone}`;
-                  setPaymentHint('opened');
-                  await Linking.openURL(url);
-                } catch (e: any) {
-                  Alert.alert('Tatzo', e?.message ?? 'Payment failed.');
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            />
-            <TouchableOpacity activeOpacity={0.9} onPress={close} style={styles.secondaryBtn}>
-              <Ionicons name="close" size={18} color={theme.colors.accent} />
-              <Text style={styles.secondaryText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
-
         {step === 'done' ? (
           <View style={styles.body}>
-            <Text style={styles.h1}>Booked</Text>
-            <Text style={styles.p}>Your slot request is sent. The artist will approve it soon.</Text>
+            <Text style={styles.h1}>Request Submitted</Text>
+            <Text style={styles.p}>
+              Booking request submitted successfully. Artist approval is required before payment becomes available.
+            </Text>
             <GradientButton title="Done" onPress={close} />
           </View>
         ) : null}
@@ -386,6 +383,12 @@ const createStyles = (theme: AppTheme) =>
       color: theme.colors.textMuted,
       fontSize: 13,
       lineHeight: 19,
+    },
+    warnText: {
+      color: theme.mode === 'light' ? '#8b2d2d' : '#ffd3cf',
+      fontSize: 12,
+      fontWeight: '800',
+      lineHeight: 18,
     },
     card: {
       borderRadius: 18,
@@ -481,6 +484,10 @@ const createStyles = (theme: AppTheme) =>
       borderColor: 'rgba(46, 160, 67, 0.35)',
       backgroundColor: 'rgba(46, 160, 67, 0.12)',
     },
+    flagWarn: {
+      borderColor: 'rgba(223, 170, 33, 0.4)',
+      backgroundColor: 'rgba(223, 170, 33, 0.14)',
+    },
     flagRed: {
       borderColor: 'rgba(232, 71, 63, 0.35)',
       backgroundColor: 'rgba(232, 71, 63, 0.12)',
@@ -544,12 +551,31 @@ const createStyles = (theme: AppTheme) =>
       fontWeight: '900',
       letterSpacing: 0.4,
     },
+    slotRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    slotBtn: {
+      flex: 1,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      paddingVertical: 10,
+      alignItems: 'center',
+    },
+    slotBtnActive: {
+      backgroundColor: theme.colors.accentSoft,
+      borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.34)' : 'rgba(122, 92, 255, 0.44)',
+    },
+    slotText: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    slotTextActive: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+    },
   });
 
 export default BookingFlowModal;
-
-
-
-
-
-

@@ -1,16 +1,36 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../../theme/useAppTheme';
 import type { AppTheme } from '../../../theme/theme';
-import { dummyArtists, DummyArtist } from '../../../data/dummyArtists';
+import type { DummyArtist } from '../../../data/dummyArtists';
 import { brand } from '../../../theme/brand';
 import GradientButton from '../../../components/ui/GradientButton';
+import { collection, limit, onSnapshot, query } from 'firebase/firestore';
+import { db } from '../../../config/firebaseConfig';
 
 type FindArtistPanelProps = {
   header?: React.ReactNode;
   onBook: (artist: DummyArtist) => void;
+};
+
+type PublicArtistProfile = {
+  uid: string;
+  displayName?: string;
+  artistName?: string;
+  studioName?: string;
+  locationCity?: string;
+  locationArea?: string;
+  location?: string;
+  startingPrice?: number;
+  startingFrom?: number;
+  experience?: string;
+  styles?: string[];
+  tags?: string[];
+  verificationStatus?: string;
+  isVisible?: boolean;
+  verifiedPro?: boolean;
 };
 
 const formatMoney = (value?: number) => {
@@ -18,23 +38,123 @@ const formatMoney = (value?: number) => {
   return new Intl.NumberFormat('en-IN').format(value);
 };
 
+const REGION_FILTERS = [
+  'All',
+  'Chennai',
+  'Around Chennai',
+  'Anna Nagar',
+  'T Nagar',
+  'Velachery',
+  'Tambaram',
+  'Porur',
+  'Avadi',
+  'Ambattur',
+  'Adyar',
+  'OMR',
+  'ECR',
+] as const;
+
+type RegionFilter = (typeof REGION_FILTERS)[number];
+
 const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
   const { theme } = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { width } = useWindowDimensions();
 
-  const [query, setQuery] = useState('');
-  const location = 'Chennai';
+  const [searchText, setSearchText] = useState('');
+  const [liveArtists, setLiveArtists] = useState<DummyArtist[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [region, setRegion] = useState<RegionFilter>('Chennai');
+
+  useEffect(() => {
+    const q = query(collection(db, 'artists'), limit(120));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const rows = snap.docs
+          .map((row) => {
+            const data = row.data() as PublicArtistProfile;
+            if (data.isVisible === false) return null;
+            const approved = data.verificationStatus === 'approved' || data.verifiedPro === true;
+            if (!approved) return null;
+
+            const name = String(data.artistName ?? data.displayName ?? data.studioName ?? '').trim();
+            if (!name) return null;
+
+            const city = String(data.locationCity ?? '').trim() || 'Chennai';
+            const area = String(data.locationArea ?? '').trim() || 'Around Chennai';
+            const locationText = `${area}, ${city}, Tamil Nadu`;
+            const startingFrom = Number(data.startingPrice ?? data.startingFrom ?? 0);
+            const tags = Array.isArray(data.styles)
+              ? data.styles.map((tag) => String(tag))
+              : Array.isArray(data.tags)
+                ? data.tags.map((tag) => String(tag))
+                : [];
+
+            const handleBase = name
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '_')
+              .replace(/^_+|_+$/g, '');
+
+            return {
+              id: row.id,
+              name,
+              handle: `@${handleBase || 'tatzo_artist'}`,
+              specialty: tags.length ? tags.slice(0, 2).join(' | ') : 'Tattoo Artist',
+              location: locationText || city || area || 'Chennai',
+              status: data.experience ? `${data.experience} experience` : 'Open for consultation',
+              category: tags[0] || 'Artist',
+              rating: 4.8,
+              startingFrom: Number.isFinite(startingFrom) ? startingFrom : 0,
+              verified: true,
+              tags: tags.length ? tags : ['tattoo'],
+            } as DummyArtist;
+          })
+          .filter(Boolean) as DummyArtist[];
+
+        setLiveArtists(rows);
+        setLoading(false);
+      },
+      () => {
+        setLiveArtists([]);
+        setLoading(false);
+      },
+    );
+
+    return () => unsub();
+  }, []);
 
   const data = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const base = dummyArtists.filter((a) => a.location === location);
+    const q = searchText.trim().toLowerCase();
+    const exactAreas = new Set(
+      REGION_FILTERS.filter((value) => !['All', 'Chennai', 'Around Chennai'].includes(value)).map((value) => value.toLowerCase()),
+    );
+    const base = liveArtists.filter((a) => {
+      const locationText = String(a.location ?? '').toLowerCase();
+      const pieces = String(a.location ?? '')
+        .split(',')
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean);
+      const area = pieces[0] ?? '';
+      const city = pieces[1] ?? 'chennai';
+
+      if (region === 'All') return true;
+      if (region === 'Chennai') return city.includes('chennai');
+      if (region === 'Around Chennai') {
+        if (!city.includes('chennai')) return false;
+        if (!area) return true;
+        return !exactAreas.has(area);
+      }
+
+      return area.includes(region.toLowerCase()) || locationText.includes(region.toLowerCase());
+    });
+
     if (!q) return base;
     return base.filter((artist) => {
       const haystack = `${artist.name} ${artist.handle} ${artist.specialty} ${artist.tags.join(' ')}`.toLowerCase();
       return haystack.includes(q);
     });
-  }, [query]);
+  }, [liveArtists, searchText, region]);
 
   const cardWidth = useMemo(() => {
     const padding = 18;
@@ -50,7 +170,7 @@ const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
     const category = (item.category ?? 'TATZO').toUpperCase();
 
     return (
-      <View style={[styles.artistCard, { width: cardWidth }]}>
+      <TouchableOpacity style={[styles.artistCard, { width: cardWidth }]} activeOpacity={0.9} onPress={() => onBook(item)}>
         <LinearGradient
           colors={[theme.colors.backgroundAlt, 'rgba(0, 229, 255, 0.16)', 'rgba(122, 92, 255, 0.22)']}
           style={styles.media}
@@ -76,10 +196,13 @@ const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
           </View>
 
           <Text style={styles.priceText}>Starting from Rs. {formatMoney(starting)}+</Text>
+          <Text style={styles.locationText} numberOfLines={1}>
+            {item.location}
+          </Text>
 
           <GradientButton title="Book Now" onPress={() => onBook(item)} size="md" />
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -91,6 +214,9 @@ const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
       columnWrapperStyle={{ gap: 12 }}
       contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 110, gap: 12 }}
       showsVerticalScrollIndicator={false}
+      ListEmptyComponent={
+        !loading ? <Text style={styles.emptyText}>No approved artists found for this location.</Text> : null
+      }
       ListHeaderComponent={
         <View style={styles.headerWrap}>
           {header ? <View style={styles.externalHeader}>{header}</View> : null}
@@ -98,8 +224,8 @@ const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
           <View style={styles.searchShell}>
             <Ionicons name="search-outline" size={16} color={theme.colors.textMuted} />
             <TextInput
-              value={query}
-              onChangeText={setQuery}
+              value={searchText}
+              onChangeText={setSearchText}
               placeholder="Search artists or styles..."
               placeholderTextColor={theme.colors.textMuted}
               autoCorrect={false}
@@ -107,8 +233,8 @@ const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
               nativeID="findArtistSearch"
               style={styles.searchInput}
             />
-            {query.length ? (
-              <TouchableOpacity activeOpacity={0.85} onPress={() => setQuery('')} style={styles.clearBtn}>
+            {searchText.length ? (
+              <TouchableOpacity activeOpacity={0.85} onPress={() => setSearchText('')} style={styles.clearBtn}>
                 <Text style={styles.clearText}>X</Text>
               </TouchableOpacity>
             ) : null}
@@ -119,13 +245,34 @@ const FindArtistPanel = ({ header, onBook }: FindArtistPanelProps) => {
               <Ionicons name="location-outline" size={16} color={brand.electricNeonBlue} />
               <Text style={styles.regionTitle}>SELECT REGION</Text>
             </View>
-            <Text style={styles.regionValue}>{location}</Text>
+            <Text style={styles.regionValue}>{region}</Text>
           </View>
+
+          <FlatList
+            horizontal
+            data={REGION_FILTERS}
+            keyExtractor={(item) => item}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.regionChips}
+            renderItem={({ item }) => {
+              const active = region === item;
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  style={[styles.regionPill, active && styles.regionPillActive]}
+                  onPress={() => setRegion(item)}
+                >
+                  <Text style={[styles.regionPillText, active && styles.regionPillTextActive]}>{item}</Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
 
           <View style={styles.topRow}>
             <Text style={styles.topTitle}>Top Artists</Text>
             <Text style={styles.countPill}>{data.length} Found</Text>
           </View>
+          {loading ? <Text style={styles.loadingText}>Loading approved artists...</Text> : null}
         </View>
       }
       renderItem={renderCard}
@@ -197,6 +344,34 @@ const createStyles = (theme: AppTheme) =>
       fontSize: 12,
       fontWeight: '800',
       letterSpacing: 1,
+    },
+    regionChips: {
+      gap: 8,
+      paddingTop: 2,
+      paddingBottom: 4,
+    },
+    regionPill: {
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+      minHeight: 34,
+      justifyContent: 'center',
+    },
+    regionPillActive: {
+      borderColor: theme.mode === 'light' ? 'rgba(122, 92, 255, 0.35)' : 'rgba(122, 92, 255, 0.4)',
+      backgroundColor: theme.colors.accentSoft,
+    },
+    regionPillText: {
+      color: theme.colors.textMuted,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 0.25,
+    },
+    regionPillTextActive: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
     },
     topRow: {
       flexDirection: 'row',
@@ -288,6 +463,26 @@ const createStyles = (theme: AppTheme) =>
       color: theme.colors.textMuted,
       fontSize: 12,
       fontWeight: '700',
+    },
+    locationText: {
+      color: theme.mode === 'light' ? theme.colors.text : theme.colors.textInverse,
+      fontSize: 12,
+      fontWeight: '700',
+      marginTop: -2,
+    },
+    loadingText: {
+      color: theme.colors.textMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      paddingHorizontal: 2,
+    },
+    emptyText: {
+      color: theme.colors.textMuted,
+      textAlign: 'center',
+      fontSize: 12,
+      fontWeight: '700',
+      paddingTop: 10,
+      paddingHorizontal: 18,
     },
     // Book button is now GradientButton for consistent neon+purple CTA.
   });

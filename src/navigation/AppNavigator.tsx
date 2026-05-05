@@ -9,6 +9,11 @@ import DealerDashboardScreen from '../screens/Dashboard/DealerDashboardScreen';
 import UserDashboardScreen from '../screens/Dashboard/UserDashboardScreen';
 import SplashScreen from '../screens/Shared/SplashScreen';
 import { markBookingPaidRazorpay } from '../services/bookings';
+import {
+  markSubscriptionPaidRazorpay,
+  markSubscriptionPaymentCancelled,
+  markSubscriptionPaymentFailed,
+} from '../services/subscription';
 import { RootStackParamList } from '../types/app';
 import { useSessionRouting } from './useSessionRouting';
 import { useAppTheme } from '../theme/useAppTheme';
@@ -63,17 +68,46 @@ const AppNavigator = () => {
         };
 
         const status = getParam('status');
-        if (status && status !== 'success') return;
+        const flow = getParam('flow') || 'booking';
+        const uid = getParam('uid');
+          if (flow === 'subscription') {
+            if (status === 'cancelled') {
+              await markSubscriptionPaymentCancelled({ uid, reason: 'Payment cancelled by user.' });
+              Alert.alert('Tatzo', 'Subscription payment cancelled. You can retry from Profile.');
+              return;
+            }
 
-        const bookingId = getParam('bookingId');
+            if (status && status !== 'success') {
+              await markSubscriptionPaymentFailed({ uid, reason: 'Payment failed. Please retry.' });
+              Alert.alert('Tatzo', 'Subscription payment failed. Retry from Profile.');
+              return;
+            }
+        } else if (status && status !== 'success') {
+          return;
+        }
+
         const orderId = getParam('orderId');
         const paymentId = getParam('paymentId');
         const signature = getParam('signature');
 
-        if (!bookingId || !orderId || !paymentId || !signature) return;
+        if (!orderId || !paymentId || !signature) return;
+
+        if (flow === 'subscription') {
+          await markSubscriptionPaidRazorpay({
+            uid,
+            orderId,
+            paymentId,
+            signature,
+          });
+          Alert.alert('Tatzo', 'Payment received. Subscription is verifying. Refresh Profile in a moment.');
+          return;
+        }
+
+        const bookingId = getParam('bookingId');
+        if (!bookingId) return;
 
         await markBookingPaidRazorpay({ bookingId, orderId, paymentId, signature });
-        Alert.alert('Tatzo', 'Payment verified. Booking request sent to artist.');
+        Alert.alert('Tatzo', 'Payment verified. Booking confirmed.');
       } catch (e: any) {
         Alert.alert('Tatzo', e?.message ?? 'Payment verification failed.');
       }

@@ -7,7 +7,7 @@ import { useAppTheme } from '../../theme/useAppTheme';
 import { brand } from '../../theme/brand';
 import type { AppTheme } from '../../theme/theme';
 
-export type ArtistNavKey = 'feed' | 'bookings' | 'calendar' | 'shop' | 'academy';
+export type ArtistNavKey = 'home' | 'booking' | 'post' | 'academy' | 'shop';
 
 type ArtistBottomNavigationProps = {
   activeKey: ArtistNavKey;
@@ -15,11 +15,11 @@ type ArtistBottomNavigationProps = {
 };
 
 const NAV_ITEMS: Array<{ key: ArtistNavKey; label: string; icon: keyof typeof Ionicons.glyphMap; isPrimary?: boolean }> = [
-  { key: 'feed', label: 'Feed', icon: 'images-outline' },
-  { key: 'bookings', label: 'Bookings', icon: 'calendar-outline', isPrimary: true },
-  { key: 'calendar', label: 'Calendar', icon: 'calendar-number-outline' },
-  { key: 'shop', label: 'Shop', icon: 'cart-outline' },
-  { key: 'academy', label: 'Academy', icon: 'library-outline' },
+  { key: 'home', label: 'Home', icon: 'home-outline' },
+  { key: 'booking', label: 'Booking Request', icon: 'calendar-outline' },
+  { key: 'post', label: 'Post', icon: 'add', isPrimary: true },
+  { key: 'academy', label: 'Academy', icon: 'school-outline' },
+  { key: 'shop', label: 'Shop', icon: 'bag-outline' },
 ];
 
 const ArtistBottomNavigation = ({ activeKey, onChange }: ArtistBottomNavigationProps) => {
@@ -51,7 +51,7 @@ const ArtistBottomNavigation = ({ activeKey, onChange }: ArtistBottomNavigationP
               )}
             </View>
 
-            <Text numberOfLines={1} style={[styles.label, isActive && styles.labelActive]}>
+            <Text numberOfLines={2} style={[styles.label, isActive && styles.labelActive]}>
               {item.label}
             </Text>
 
@@ -88,6 +88,7 @@ const createStyles = (theme: AppTheme) =>
     },
     item: {
       flex: 1,
+      minWidth: 0,
       alignItems: 'center',
       justifyContent: 'center',
       gap: 4,
@@ -114,10 +115,12 @@ const createStyles = (theme: AppTheme) =>
     },
     label: {
       color: theme.colors.textMuted,
-      fontSize: 9,
+      fontSize: 8.6,
+      lineHeight: 10.8,
       fontWeight: '800',
-      letterSpacing: 0.2,
+      letterSpacing: 0.15,
       textAlign: 'center',
+      minHeight: 21,
     },
     labelActive: {
       color: theme.colors.accent,

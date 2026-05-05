@@ -1,4 +1,4 @@
-﻿import { DashboardRouteName, UserProfile, UserRole } from '../types/app';
+import { DashboardRouteName, UserProfile, UserRole, VerificationStatus } from '../types/app';
 
 const ROLE_ROUTE_MAP: Record<UserRole, DashboardRouteName> = {
   user: 'UserDashboard',
@@ -8,6 +8,17 @@ const ROLE_ROUTE_MAP: Record<UserRole, DashboardRouteName> = {
 
 export const isUserRole = (value: unknown): value is UserRole => {
   return value === 'user' || value === 'artist' || value === 'dealer';
+};
+
+export const isVerificationStatus = (value: unknown): value is VerificationStatus => {
+  return value === 'unsubmitted' || value === 'pending' || value === 'approved' || value === 'rejected';
+};
+
+// Artist/Dealer dashboards unlock only after admin approval.
+export const resolveEffectiveRole = (profile: Pick<UserProfile, 'role' | 'verificationStatus'>): UserRole => {
+  const role = isUserRole(profile.role) ? profile.role : 'user';
+  if (role === 'user') return 'user';
+  return profile.verificationStatus === 'approved' ? role : 'user';
 };
 
 // Session-level readiness: we only need a valid role + setupComplete.

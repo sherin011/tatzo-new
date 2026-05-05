@@ -9,9 +9,14 @@ lerna-debug.log*
 
 node_modules
 .expo/
+android/.kotlin/
 dist
+admin-web/dist
+admin-web/tsconfig.tsbuildinfo
 dist-ssr
 *.local
+.env
+server/.env
 
 # Editor directories and files
 .vscode/*

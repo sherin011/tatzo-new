@@ -94,9 +94,15 @@ export const skinCheckerQuestions: readonly SkinCheckerQuestion[] = [
   },
 ] as const;
 
-export type SkinCheckerFlag = 'GREEN' | 'RED';
+export type SkinCheckerFlag = 'GREEN' | 'YELLOW' | 'RED';
 
-export const evaluateSkinChecker = (answers: Record<string, string>): { flag: SkinCheckerFlag; score: number; criticalHit: boolean } => {
+export const evaluateSkinChecker = (answers: Record<string, string>): {
+  flag: SkinCheckerFlag;
+  score: number;
+  criticalHit: boolean;
+  status: 'safe' | 'warning' | 'unsafe';
+  notes: string;
+} => {
   let score = 0;
   let criticalHit = false;
 
@@ -108,6 +114,17 @@ export const evaluateSkinChecker = (answers: Record<string, string>): { flag: Sk
     if (opt.critical) criticalHit = true;
   }
 
-  const flag: SkinCheckerFlag = criticalHit || score >= 6 ? 'RED' : 'GREEN';
-  return { flag, score, criticalHit };
+  let status: 'safe' | 'warning' | 'unsafe' = 'safe';
+  if (criticalHit || score >= 8) status = 'unsafe';
+  else if (score >= 4) status = 'warning';
+
+  const flag: SkinCheckerFlag = status === 'safe' ? 'GREEN' : status === 'warning' ? 'YELLOW' : 'RED';
+  const notes =
+    status === 'safe'
+      ? 'No major risks detected. Proceed with standard care.'
+      : status === 'warning'
+        ? 'Mild-to-moderate risk detected. Review precautions before proceeding.'
+        : 'High risk detected. Strongly advise dermatologist review before tattooing.';
+
+  return { flag, score, criticalHit, status, notes };
 };
