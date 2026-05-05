@@ -6,10 +6,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   limit,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 import { writeNotificationDual } from './notifications';
@@ -79,14 +81,17 @@ export const toggleLike = async (params: { postId: string; artist: ArtistIdentit
   const targetUidPromise = resolveTargetUid(params.artist);
 
   const likeRef = doc(db, 'posts', params.postId, 'likes', actorUid);
+  const postRef = doc(db, 'posts', params.postId);
   const likeSnap = await getDoc(likeRef);
 
   if (likeSnap.exists()) {
     await deleteDoc(likeRef);
+    await updateDoc(postRef, { likesCount: increment(-1), updatedAt: serverTimestamp() }).catch(() => {});
     return { liked: false, targetUid: params.artist.uid ?? null, likeDelta: -1 };
   }
 
   await setDoc(likeRef, { uid: actorUid, createdAt: serverTimestamp() }, { merge: true });
+  await updateDoc(postRef, { likesCount: increment(1), updatedAt: serverTimestamp() }).catch(() => {});
   const targetUid = await targetUidPromise.catch(() => null);
   const notifId = targetUid ? notificationDocId('like', { toUid: targetUid, fromUid: actorUid, postId: params.postId }) : '';
 
@@ -189,4 +194,17 @@ export const toggleFollow = async (params: { artist: ArtistIdentity }) => {
   }
 
   return { following: true, targetUid };
+};
+
+export const getPostLikeState = async (postId: string, uid: string) => {
+  if (!postId || !uid) return false;
+  const snap = await getDoc(doc(db, 'posts', postId, 'likes', uid));
+  return snap.exists();
+};
+
+export const getFollowState = async (targetUid: string | undefined, uid: string) => {
+  const safeTarget = String(targetUid ?? '').trim();
+  if (!safeTarget || !uid || safeTarget === uid) return false;
+  const snap = await getDoc(doc(db, 'follows', `${uid}_${safeTarget}`));
+  return snap.exists();
 };

@@ -221,6 +221,7 @@ const ArtistPostPanel = ({ header, onRequireSubscription }: ArtistPostPanelProps
         uri: picked.uri,
         fileName: picked.name,
         mimeType: picked.mimeType,
+        blob: picked.blob,
         folderPath: `artists/${uid}/posts`,
       });
       setImageUrl(uploaded.downloadUrl);

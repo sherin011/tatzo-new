@@ -14,7 +14,7 @@ import { signOutAndCleanup } from '../../../services/signout';
 import GradientButton from '../../../components/ui/GradientButton';
 import { db } from '../../../config/firebaseConfig';
 import { syncArtistPostVisibilityForUid } from '../../../services/posts';
-import { ARTIST_SUBSCRIPTION_AMOUNT_RUPEES, openRazorpayCheckoutForSubscription } from '../../../services/subscription';
+import { ARTIST_SUBSCRIPTION_AMOUNT_RUPEES, ARTIST_SUBSCRIPTION_OFFER_LABEL, openRazorpayCheckoutForSubscription } from '../../../services/subscription';
 import { pickSingleImageFromDevice, uploadPickedImage } from '../../../services/mediaUpload';
 
 type ArtistSettingPanelProps = {
@@ -376,6 +376,7 @@ const ArtistSettingPanel = ({ header }: ArtistSettingPanelProps) => {
         uri: picked.uri,
         fileName: picked.name,
         mimeType: picked.mimeType,
+        blob: picked.blob,
         folderPath: `artists/${uid}/profile`,
       });
       setProfileImageUrl(uploaded.downloadUrl);
@@ -479,6 +480,7 @@ const ArtistSettingPanel = ({ header }: ArtistSettingPanelProps) => {
               <Text style={styles.infoLabel}>Plan</Text>
               <Text style={styles.infoValue}>TATZO PRO - Rs. {ARTIST_SUBSCRIPTION_AMOUNT_RUPEES} / month</Text>
             </View>
+            <Text style={styles.offerLine}>{ARTIST_SUBSCRIPTION_OFFER_LABEL}</Text>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Subscription</Text>
               <Text style={styles.infoValue}>{subscriptionStatus.toUpperCase()}</Text>
@@ -738,6 +740,12 @@ const createStyles = (theme: AppTheme) =>
       color: theme.mode === 'light' ? '#2f4c7b' : '#b8d5ff',
       fontSize: 12,
       fontWeight: '700',
+    },
+    offerLine: {
+      color: theme.mode === 'light' ? '#512aa5' : '#d9ceff',
+      fontSize: 12,
+      fontWeight: '800',
+      lineHeight: 17,
     },
     goodLine: {
       color: theme.mode === 'light' ? '#2f6a3b' : '#b3ffd2',

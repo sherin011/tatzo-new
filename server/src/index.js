@@ -23,6 +23,11 @@ console.log('TATZO: RAZORPAY_KEY_ID present?', Boolean(KEY_ID));
 console.log('TATZO: RAZORPAY_KEY_SECRET present?', Boolean(KEY_SECRET));
 console.log('TATZO: Razorpay mode', PAYMENT_MODE);
 const DEEPLINK_SUCCESS = process.env.DEEPLINK_SUCCESS || '';
+const SUBSCRIPTION_REGULAR_RUPEES = 1499;
+const SUBSCRIPTION_BASE_RUPEES = 499;
+const SUBSCRIPTION_GST_RATE = 0.18;
+const SUBSCRIPTION_GST_RUPEES = Number((SUBSCRIPTION_BASE_RUPEES * SUBSCRIPTION_GST_RATE).toFixed(2));
+const SUBSCRIPTION_TOTAL_RUPEES = Number((SUBSCRIPTION_BASE_RUPEES + SUBSCRIPTION_GST_RUPEES).toFixed(2));
 
 const assertConfigured = () => {
   if (!KEY_ID || !KEY_SECRET) {
@@ -189,14 +194,14 @@ app.get('/pay', async (req, res, next) => {
     const bookingId = String(req.query.bookingId || '').trim();
     const flow = String(req.query.flow || 'booking').trim();
     const requestedAmountRupees = Number(req.query.amountRupees || 249);
-    const amountRupees = flow === 'subscription' ? 588.82 : requestedAmountRupees; // Discount offer: Rs.499 base + 18% GST = Rs.588.82 total
+    const amountRupees = flow === 'subscription' ? SUBSCRIPTION_TOTAL_RUPEES : requestedAmountRupees;
     const name = String(req.query.name || 'Tatzo User');
     const email = String(req.query.email || '');
     const phone = String(req.query.phone || '');
     const returnUrlFromClient = String(req.query.returnUrl || '').trim();
     const uid = String(req.query.uid || '').trim();
     const paymentTitle = flow === 'subscription' ? 'Tatzo Pro subscription' : 'Booking deposit';
-    const paymentDescription = flow === 'subscription' ? 'Tatzo Pro monthly plan' : 'Booking deposit';
+    const paymentDescription = flow === 'subscription' ? `Discount plan Rs.${SUBSCRIPTION_BASE_RUPEES} + GST Rs.${SUBSCRIPTION_GST_RUPEES}` : 'Booking deposit';
 
     const order = await createOrder({ bookingId, amountRupees });
 
@@ -226,7 +231,7 @@ app.get('/pay', async (req, res, next) => {
   <div class="card">
     <div class="brand">TATZO</div>
     <div class="title">${safe(paymentTitle)}</div>
-    <div class="muted">Amount: <b>Rs. ${safe(amountRupees)}</b><br/>Booking: <b>${safe(bookingId || order.receipt)}</b><br/>Mode: <b>${safe(PAYMENT_MODE.toUpperCase())}</b></div>
+    <div class="muted">Amount: <b>Rs. ${safe(amountRupees)}</b>${flow === 'subscription' ? `<br/>Offer: <b>Regular Rs. ${SUBSCRIPTION_REGULAR_RUPEES}, now Rs. ${SUBSCRIPTION_BASE_RUPEES} + 18% GST (Rs. ${SUBSCRIPTION_GST_RUPEES})</b>` : ''}<br/>Booking: <b>${safe(bookingId || order.receipt)}</b><br/>Mode: <b>${safe(PAYMENT_MODE.toUpperCase())}</b></div>
     <button class="btn" id="payBtn">Pay now</button>
     <div class="fine">Test mode supported. Do not close this tab until you see Success.</div>
     <div class="status" id="status"></div>

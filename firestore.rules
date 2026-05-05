@@ -47,6 +47,17 @@ service cloud.firestore {
         && userData(uid).subscriptionVerificationStatus == 'verified';
     }
 
+    function isPostLikeCountOnlyUpdate() {
+      return isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'updatedAt'])
+        && request.resource.data.likesCount is int
+        && request.resource.data.likesCount >= 0
+        && (
+          request.resource.data.likesCount == resource.data.get('likesCount', 0) + 1
+          || request.resource.data.likesCount == resource.data.get('likesCount', 0) - 1
+        );
+    }
+
     function ownerLocationLockedWhenPending(uid) {
       return userVerification(uid) != 'pending'
         || (
@@ -161,12 +172,19 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if isSignedIn();
 
-      allow create, update: if isAdmin() || (
+      allow create: if isAdmin() || (
         isSignedIn()
         && request.resource.data.artistUid == request.auth.uid
         && isApprovedArtist(request.auth.uid)
         && isArtistSubscriptionActive(request.auth.uid)
       );
+
+      allow update: if isAdmin() || (
+        isSignedIn()
+        && request.resource.data.artistUid == request.auth.uid
+        && isApprovedArtist(request.auth.uid)
+        && isArtistSubscriptionActive(request.auth.uid)
+      ) || isPostLikeCountOnlyUpdate();
 
       allow delete: if false;
 

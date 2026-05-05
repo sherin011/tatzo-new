@@ -7,7 +7,7 @@ import { auth, db } from '../../../config/firebaseConfig';
 import { useAppTheme } from '../../../theme/useAppTheme';
 import type { AppTheme } from '../../../theme/theme';
 import { brand } from '../../../theme/brand';
-import { buildShareLink, sharePost, toggleFollow, toggleLike } from '../../../services/social';
+import { buildShareLink, getFollowState, getPostLikeState, sharePost, toggleFollow, toggleLike } from '../../../services/social';
 
 type SocioFeedPanelProps = {
   header?: React.ReactNode;
@@ -189,23 +189,37 @@ const SocioFeedPanel = ({ header }: SocioFeedPanelProps) => {
 
   useEffect(() => {
     const actor = auth.currentUser;
-    if (!actor) return;
+    if (!actor) {
+      setLikedMap({});
+      setFollowingMap({});
+      const counts: Record<string, number> = {};
+      posts.forEach((row) => {
+        counts[row.id] = Number(row.likesCount ?? 0);
+      });
+      setLikeCountMap(counts);
+      return;
+    }
     let isActive = true;
 
-    const nextLiked: Record<string, boolean> = {};
-    const nextFollowing: Record<string, boolean> = {};
     const nextLikeCounts: Record<string, number> = {};
     posts.forEach((row) => {
-      nextLiked[row.id] = false;
-      nextFollowing[row.artistKey] = false;
       nextLikeCounts[row.id] = Number(row.likesCount ?? 0);
     });
 
-    if (isActive) {
-      setLikedMap(nextLiked);
-      setFollowingMap(nextFollowing);
-      setLikeCountMap(nextLikeCounts);
-    }
+    setLikeCountMap(nextLikeCounts);
+
+    (async () => {
+      const likeEntries = await Promise.all(
+        posts.map(async (row) => [row.id, await getPostLikeState(row.id, actor.uid).catch(() => false)] as const),
+      );
+      const followEntries = await Promise.all(
+        posts.map(async (row) => [row.artistKey, await getFollowState(row.artistUid, actor.uid).catch(() => false)] as const),
+      );
+
+      if (!isActive) return;
+      setLikedMap(Object.fromEntries(likeEntries));
+      setFollowingMap(Object.fromEntries(followEntries));
+    })();
 
     return () => {
       isActive = false;

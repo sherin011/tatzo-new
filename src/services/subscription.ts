@@ -4,7 +4,13 @@ import Constants from 'expo-constants';
 import { auth, db } from '../config/firebaseConfig';
 import { getPaymentsServerUrl } from '../config/payments';
 
-export const ARTIST_SUBSCRIPTION_AMOUNT_RUPEES = 588.82;
+export const ARTIST_SUBSCRIPTION_REGULAR_RUPEES = 1499;
+export const ARTIST_SUBSCRIPTION_BASE_RUPEES = 499;
+export const ARTIST_SUBSCRIPTION_GST_RATE = 0.18;
+export const ARTIST_SUBSCRIPTION_GST_RUPEES = Number((ARTIST_SUBSCRIPTION_BASE_RUPEES * ARTIST_SUBSCRIPTION_GST_RATE).toFixed(2));
+export const ARTIST_SUBSCRIPTION_AMOUNT_RUPEES = Number((ARTIST_SUBSCRIPTION_BASE_RUPEES + ARTIST_SUBSCRIPTION_GST_RUPEES).toFixed(2));
+export const ARTIST_SUBSCRIPTION_OFFER_LABEL =
+  `Launch Discount: Regular Rs.${ARTIST_SUBSCRIPTION_REGULAR_RUPEES}, now Rs.${ARTIST_SUBSCRIPTION_BASE_RUPEES} + 18% GST (Rs.${ARTIST_SUBSCRIPTION_GST_RUPEES}) = Rs.${ARTIST_SUBSCRIPTION_AMOUNT_RUPEES}`;
 
 const buildSubscriptionReturnUrl = (uid: string) => {
   const hostUri =

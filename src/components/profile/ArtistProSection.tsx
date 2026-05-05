@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import { Pressable } from 'react-native';
-import { openRazorpayCheckoutForSubscription } from '../../services/subscription';
+import { ARTIST_SUBSCRIPTION_AMOUNT_RUPEES, ARTIST_SUBSCRIPTION_OFFER_LABEL, openRazorpayCheckoutForSubscription } from '../../services/subscription';
 
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,11 +15,6 @@ type ArtistProSectionProps = {
   onPatchProfile: (patch: Partial<UserProfile>) => void;
 };
 
-const openSubscription = useCallback(() => {
-  openRazorpayCheckoutForSubscription().catch(console.error);
-}, []);
-
-
 const statusCopy = (status: UserProfile['verificationStatus']): { label: string; tone: 'muted' | 'good' | 'warn' } => {
   if (status === 'approved') return { label: 'VERIFIED', tone: 'good' };
   if (status === 'pending') return { label: 'PENDING', tone: 'warn' };
@@ -30,6 +25,9 @@ const statusCopy = (status: UserProfile['verificationStatus']): { label: string;
 const ArtistProSection = ({ uid, role, profile }: ArtistProSectionProps) => {
   const { theme } = useAppTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const openSubscription = useCallback(() => {
+    openRazorpayCheckoutForSubscription().catch(console.error);
+  }, []);
 
   if (!uid) return null;
   if (role !== 'artist' && role !== 'dealer') return null;
@@ -69,10 +67,10 @@ const ArtistProSection = ({ uid, role, profile }: ArtistProSectionProps) => {
         </View>
 
         <Text style={styles.cardSub} numberOfLines={3}>
-          Limited Discount Offer: Rs.499 + 18% GST (Rs.89.82) = Rs.588.82 total. Tap to subscribe.
+          {ARTIST_SUBSCRIPTION_OFFER_LABEL}. Tap to subscribe.
         </Text>
         <Pressable onPress={openSubscription} style={styles.subscribeBtn}>
-          <Text style={styles.subscribeBtnText}>Subscribe Now (Rs.588.82)</Text>
+          <Text style={styles.subscribeBtnText}>Subscribe Now (Rs.{ARTIST_SUBSCRIPTION_AMOUNT_RUPEES})</Text>
         </Pressable>
 
       </View>

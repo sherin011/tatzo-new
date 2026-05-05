@@ -6,6 +6,7 @@ type PickedImage = {
   uri: string;
   name: string;
   mimeType: string;
+  blob?: Blob;
 };
 
 export type UploadedImage = {
@@ -20,7 +21,7 @@ const sanitizeFileName = (value: string) =>
     .replace(/_+/g, '_')
     .slice(0, 80);
 
-const uriToBlob = (uri: string): Promise<Blob> =>
+const uriToBlobWithXhr = (uri: string): Promise<Blob> =>
   new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.onerror = () => reject(new Error('Could not read file.'));
@@ -29,6 +30,16 @@ const uriToBlob = (uri: string): Promise<Blob> =>
     xhr.open('GET', uri, true);
     xhr.send(null);
   });
+
+const uriToBlob = async (uri: string): Promise<Blob> => {
+  try {
+    const response = await fetch(uri);
+    if (!response.ok) throw new Error('Could not read file.');
+    return await response.blob();
+  } catch {
+    return uriToBlobWithXhr(uri);
+  }
+};
 
 export const pickSingleImageFromDevice = async (): Promise<PickedImage | null> => {
   const result = await DocumentPicker.getDocumentAsync({
@@ -47,6 +58,7 @@ export const pickSingleImageFromDevice = async (): Promise<PickedImage | null> =
     uri: asset.uri,
     name,
     mimeType,
+    blob: (asset as any).file instanceof Blob ? ((asset as any).file as Blob) : undefined,
   };
 };
 
@@ -55,16 +67,30 @@ export const uploadPickedImage = async (params: {
   fileName: string;
   folderPath: string;
   mimeType?: string;
+  blob?: Blob;
 }): Promise<UploadedImage> => {
   const safeFolder = String(params.folderPath || 'uploads').replace(/\/+$/, '');
   const safeName = sanitizeFileName(params.fileName || `image_${Date.now()}.jpg`);
   const finalPath = `${safeFolder}/${Date.now()}_${safeName}`;
 
-  const blob = await uriToBlob(params.uri);
+  const blob = params.blob ?? (await uriToBlob(params.uri));
+  if (blob.size > 8 * 1024 * 1024) {
+    throw new Error('Image is too large. Please upload an image below 8 MB.');
+  }
+
   const storageRef = ref(storage, finalPath);
-  await uploadBytes(storageRef, blob, {
-    contentType: params.mimeType || 'image/jpeg',
-  });
+  try {
+    await uploadBytes(storageRef, blob, {
+      contentType: params.mimeType || 'image/jpeg',
+    });
+  } catch (error: any) {
+    const code = String(error?.code ?? '');
+    if (code.includes('unauthorized')) {
+      throw new Error('Upload permission denied. Please sign in again and deploy latest storage rules.');
+    }
+    throw new Error(error?.message ?? 'Image upload failed. Please try again.');
+  }
+
   const downloadUrl = await getDownloadURL(storageRef);
 
   return {
@@ -73,4 +99,3 @@ export const uploadPickedImage = async (params: {
     fileName: safeName,
   };
 };
-
