@@ -4,6 +4,14 @@
     "slug": "tatzo-new",
     "version": "1.0.7",
     "scheme": "tatzo",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "android": {
       "package": "com.tatzo.app",
       "versionCode": 9,
@@ -20,15 +28,6 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "plugins": [
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Allow Tatzo to use your location to show nearby tattoo artists."
-        }
-      ]
-    ],
-    "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.tatzo.app",
       "buildNumber": "1.0.7",
@@ -41,33 +40,13 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
-    "extra": {
-      "eas": {
-        "projectId": "a8df3df9-8925-4d4b-9f1f-bbd908f07f54"
-      }
-    },
-    "owner": "sherinakash"
-  }
-}
-
-{
-  "expo": {
-    "name": "tatzo-new",
-    "slug": "tatzo-new",
-    "version": "1.0.7",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.tatzo.app"
-    },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Tatzo to use your location to show nearby tattoo artists."
+        }
+      ],
       [
         "expo-build-properties",
         {
@@ -76,6 +55,12 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a8df3df9-8925-4d4b-9f1f-bbd908f07f54"
+      }
+    },
+    "owner": "sherinakash"
   }
 }
