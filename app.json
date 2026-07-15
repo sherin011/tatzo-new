@@ -51,12 +51,13 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static",
-            "buildSettings": {
-              "CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES": "YES"
-            }
+            "useFrameworks": "static"
           }
         }
+      ],
+      [
+        "expo-node-assets",
+        {}
       ]
     ],
     "extra": {
