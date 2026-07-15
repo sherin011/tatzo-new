@@ -7,6 +7,11 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "android": {
       "package": "com.tatzo.app",
       "versionCode": 9,
@@ -46,7 +51,10 @@
         "expo-build-properties",
         {
           "ios": {
-            "useFrameworks": "static"
+            "useFrameworks": "static",
+            "buildSettings": {
+              "CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES": "YES"
+            }
           }
         }
       ]
@@ -57,5 +65,8 @@
       }
     },
     "owner": "sherinakash"
+  },
+  "react-native-google-signin": {
+    "iosClientId": ""
   }
 }
