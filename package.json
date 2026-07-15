@@ -44,6 +44,11 @@
     "react-native-screens": "~4.16.0",
     "react-native-web": "^0.21.0"
   },
+  "react-native": {
+    "ios": {
+      "sharedAndModularHeaders": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/react": "~19.1.10",
