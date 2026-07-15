@@ -47,7 +47,24 @@
           "locationWhenInUsePermission": "Allow Tatzo to use your location to show nearby tattoo artists."
         }
       ],
-      "./withModularHeaders.js"
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "extraPods": [
+              {
+                "name": "RNFBApp",
+                "modular_headers": true
+              },
+              {
+                "name": "RNFBAnalytics",
+                "modular_headers": true
+              }
+            ]
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
@@ -55,5 +72,8 @@
       }
     },
     "owner": "sherinakash"
+  },
+  "react-native-google-signin": {
+    "iosClientId": ""
   }
 }
