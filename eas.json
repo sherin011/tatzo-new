@@ -1,7 +1,6 @@
 {
   "cli": {
-    "version": ">= 12.0.0",
-    "appVersionSource": "local"
+    "version": ">= 10.0.0"
   },
   "build": {
     "development": {
@@ -12,11 +11,8 @@
       "distribution": "internal"
     },
     "production": {
-      "android": {
-        "buildType": "app-bundle"
-      },
       "ios": {
-        "distribution": "store"
+        "image": "macos-sequoia-15.3-xcode-17.2"
       }
     }
   },
