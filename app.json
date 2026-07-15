@@ -55,10 +55,7 @@
           }
         }
       ],
-      [
-        "expo-node-assets",
-        {}
-      ]
+      "./withModularHeaders.js"
     ],
     "extra": {
       "eas": {
@@ -66,8 +63,5 @@
       }
     },
     "owner": "sherinakash"
-  },
-  "react-native-google-signin": {
-    "iosClientId": ""
   }
 }
